@@ -70,18 +70,29 @@
 
 ### Direct Clone
 
+Clone this SDK into your project directory at the released `v0.1.0` tag:
+
 ```bash
-git clone https://github.com/0xfnzero/pons-parser-sdk
-cd pons-parser-sdk
-go mod tidy
+cd your_project_root_directory
+git clone --branch v0.1.0 --depth 1 https://github.com/0xfnzero/pons-parser-sdk
 ```
 
-Use from another local module:
+Add the local module to your project's `go.mod`:
 
 ```go
 require github.com/0xfnzero/pons-parser-sdk v0.1.0
 
-replace github.com/0xfnzero/pons-parser-sdk => ../pons-parser-sdk
+replace github.com/0xfnzero/pons-parser-sdk => ./pons-parser-sdk
+```
+
+Then resolve dependencies and import the SDK package normally:
+
+```bash
+go mod tidy
+```
+
+```go
+import "github.com/0xfnzero/pons-parser-sdk/ponsparser"
 ```
 
 ### Go Modules
