@@ -1,22 +1,37 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"os"
 
-	ponsparser "github.com/0xfnzero/pons-parser-sdk/ponsparser"
+	sdk "github.com/0xfnzero/rbh-parser-sdk/rbhparser"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 func main() {
-	receipt := &types.Receipt{}
-	factory := common.HexToAddress("0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e")
-	validator := func(kind ponsparser.EventKind, emitter common.Address) bool {
-		return kind == ponsparser.EventTokenLaunched && emitter == factory
+	rpcURL := os.Getenv("ROBINHOOD_RPC_URL")
+	txHash := os.Getenv("TX_HASH")
+	if rpcURL == "" || txHash == "" {
+		log.Fatal("set ROBINHOOD_RPC_URL and TX_HASH")
 	}
-	events, err := ponsparser.ParseReceiptEventsFiltered(receipt, validator)
+	ctx := context.Background()
+	client, err := ethclient.DialContext(ctx, rpcURL)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
-	fmt.Println("parsed events:", len(events))
+	defer client.Close()
+	receipt, err := client.TransactionReceipt(ctx, common.HexToHash(txHash))
+	if err != nil {
+		log.Fatal(err)
+	}
+	events, err := sdk.New().ParseReceipt(receipt)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, event := range events {
+		fmt.Printf("protocol=%s kind=%d data=%#v\n", event.Protocol, event.Kind, event.Data)
+	}
 }

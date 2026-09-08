@@ -1,232 +1,160 @@
-<div align="center">
-    <h1>Pons Parser SDK for Go</h1>
-    <h3><em>Go receipt and log parser for pons v2 events and custom errors</em></h3>
-</div>
+# RBH Parser SDK for Go
 
-<p align="center">
-    <strong>Decode pons v2 launch, curve, hook, vault, locker, graduation, ERC-20 events, and revert data into typed or generic Go values.</strong>
-</p>
+Low-latency, multi-protocol event and calldata parsing for Robinhood Chain.
 
-<p align="center">
-    <a href="https://pkg.go.dev/github.com/0xfnzero/pons-parser-sdk">
-        <img src="https://pkg.go.dev/badge/github.com/0xfnzero/pons-parser-sdk.svg" alt="Go Reference">
-    </a>
-    <a href="https://github.com/0xfnzero/pons-parser-sdk/releases/latest">
-        <img src="https://img.shields.io/github/v/release/0xfnzero/pons-parser-sdk" alt="Release">
-    </a>
-    <a href="LICENSE">
-        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
-    </a>
-</p>
+The SDK is transport agnostic. It parses values supplied by the application and
+does not include official Feed, BlockRazor, WebSocket, RPC subscription, or
+network client implementations.
 
-<p align="center">
-    <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/EVM-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white" alt="EVM">
-    <img src="https://img.shields.io/badge/Pons-v2-4B8BBE?style=for-the-badge" alt="Pons v2">
-</p>
+## Supported protocols
 
-<p align="center">
-    <a href="./README_CN.md">中文</a> |
-    <a href="./README.md">English</a> |
-    <a href="https://fnzero.dev/">Website</a> |
-    <a href="https://t.me/fnzero_group">Telegram</a> |
-    <a href="https://discord.gg/vuazbGkqQE">Discord</a>
-</p>
+| Protocol | Launch events | Curve trades | Uniswap v4 pools and swaps | Transaction intents |
+|----------|---------------|--------------|----------------------------|---------------------|
+| Pons V2 | Yes | Yes | Yes | Yes |
+| Long | Yes | No | Yes | Yes |
+| o1 | Yes | No | Yes | Yes |
+| Pools.trade | Yes | No | Yes | Yes |
+| PAIR | Yes | No | Yes | Yes |
+| Bags V2 | Yes | Yes | Yes | Yes |
 
----
+Use `SupportedProtocols()` for machine-readable capabilities and
+`ParseProtocol()` for configuration values.
 
-## SDKs
+## Guarantees
 
-| SDK | Module |
-|-----|--------|
-| Trade | [`github.com/0xfnzero/pons-trade-sdk`](https://github.com/0xfnzero/pons-trade-sdk) |
-| Parser | [`github.com/0xfnzero/pons-parser-sdk`](https://github.com/0xfnzero/pons-parser-sdk) |
-
-## What This SDK Is For
-
-`pons-parser-sdk` is for indexers, monitoring workers, trading bots, analytics systems, and backend APIs that need pons v2 logs decoded from receipts. The parser follows official docs first, then fills incomplete event/error coverage from the public V2 Solidity source.
-
-| Area | Coverage |
-|------|----------|
-| Inputs | `types.Log`, `types.Receipt`, custom ABI registries, revert data |
-| Events | Factory, bonding curve, meme hook, buyback vault, launch locker, graduation executor, ownership changes, ERC-20 `Transfer` / `Approval` |
-| Typed events | `TokenLaunched`, `CurveBuy`, `CurveSell` |
-| Generic events | All other built-in official events as `GenericEvent` |
-| Runtime | Go 1.25+; use a supported, fully patched Go release for production builds |
-
-## Features
-
-1. Built-in pons v2 event topics from the official Solidity source.
-2. Typed parsers for launch and bonding-curve trade events.
-3. Generic parser for all supported pons v2 operational events.
-4. `EventRegistry` for future ABI extensions without changing call sites.
-5. Custom error decoding for pons v2 and common dependency errors.
-6. Topic filter helpers for launch and curve trade subscriptions.
+- Routes launch events by `(emitter, topic0)`, not by topic alone.
+- Validates ABI words, signed integers, address padding, dynamic offsets, and
+  bounded payload sizes.
+- Reconstructs and verifies Uniswap v4 `PoolKey` and pool IDs.
+- Associates launch, initialization, liquidity, swap, and curve events through
+  a concurrency-safe local registry.
+- Applies receipt registry updates transactionally: a malformed receipt cannot
+  partially mutate parser state.
+- Supports snapshot and restore of known curve and pool registrations.
+- Performs no hidden RPC or network calls.
 
 ## Installation
 
-### Direct Clone
-
-Clone this SDK into your project directory at the released `v0.1.0` tag:
-
 ```bash
-cd your_project_root_directory
-git clone --branch v0.1.0 --depth 1 https://github.com/0xfnzero/pons-parser-sdk
+go get github.com/0xfnzero/rbh-parser-sdk@latest
 ```
 
-Add the local module to your project's `go.mod`:
+## Parse a receipt
 
 ```go
-require github.com/0xfnzero/pons-parser-sdk v0.1.0
+package main
 
-replace github.com/0xfnzero/pons-parser-sdk => ./pons-parser-sdk
-```
+import (
+    "fmt"
 
-Then resolve dependencies and import the SDK package normally:
+    sdk "github.com/0xfnzero/rbh-parser-sdk/rbhparser"
+    gethtypes "github.com/ethereum/go-ethereum/core/types"
+)
 
-```bash
-go mod tidy
-```
-
-```go
-import "github.com/0xfnzero/pons-parser-sdk/ponsparser"
-```
-
-### Go Modules
-
-```bash
-go get github.com/0xfnzero/pons-parser-sdk@v0.1.0
-```
-
-## Usage Examples
-
-### Parse A Receipt
-
-```go
-validator := func(kind ponsparser.EventKind, emitter common.Address) bool {
-    switch kind {
-    case ponsparser.EventTokenLaunched:
-        return emitter == factory
-    case ponsparser.EventCurveBuy, ponsparser.EventCurveSell:
-        return emitter == curve
-    default:
-        return false
+func parse(receipt *gethtypes.Receipt) error {
+    parser := sdk.New()
+    events, err := parser.ParseReceipt(receipt)
+    if err != nil {
+        return err
     }
-}
-events, err := ponsparser.ParseReceiptEventsFiltered(receipt, validator)
-if err != nil {
-    panic(err)
-}
-
-for _, ev := range events {
-    switch data := ev.Event.(type) {
-    case ponsparser.TokenLaunched:
-        fmt.Println("launched", data.Token.Hex(), data.Curve.Hex())
-    case ponsparser.CurveBuy:
-        fmt.Println("buy", data.Buyer.Hex(), data.TokensOut)
-    case ponsparser.GenericEvent:
-        fmt.Println(data.RawName, data.Values)
+    for _, event := range events {
+        fmt.Printf("protocol=%s kind=%s data=%#v\n", event.Protocol, event.Kind, event.Data)
     }
+    return nil
 }
 ```
 
-### Parse One Log
+`ParseReceipt` is preferred when a transaction can launch and initialize a pool
+before its first swap. The parser stages all registry changes and commits them
+only after the complete receipt succeeds.
+
+## Parse a log stream
+
+Keep one parser per ordered stream so its registry accumulates launches and
+pools:
 
 ```go
-parsed, ok, err := ponsparser.ParseLogValidated(log, validator)
+parser := rbhparser.New()
+
+event, ok, err := parser.ParseLog(log)
 if err != nil {
-    panic(err)
+    // Reject or quarantine malformed protocol data.
 }
 if ok {
-    fmt.Printf("%s %#v\n", parsed.Kind, parsed.Event)
-    if parsed.Log.Removed {
-        fmt.Println("remove this event because of a chain reorganization")
+    // Process the normalized event.
+}
+```
+
+For lifecycle association, supply complete receipts for launch and migration
+transactions. A bare Uniswap v4 `Initialize` event may not contain enough
+information to distinguish launchpad ownership.
+
+## Parse transaction calldata
+
+Applications may pass any decoded EVM transaction directly to the intent
+parser. The SDK does not connect to or depend on its source:
+
+```go
+if parser.IsPotentialIntent(tx) {
+    intents, err := parser.ParseTransactionIntents(tx, sender)
+    if err != nil {
+        return err
     }
+    _ = intents
 }
 ```
 
-### Validate Event Sources
+`IsPotentialIntentWithFilter` performs a cheap contract and selector check
+before full ABI decoding. Transaction intents describe submitted calldata, not
+confirmed execution or fill amounts.
 
-Topic signatures do not authenticate an emitter. The examples above therefore use source-filtered parsing. For indexers and automated trading systems, bind every event role to its expected contract instead of using one flat address set:
+## Filters
 
 ```go
-validator := func(kind ponsparser.EventKind, emitter common.Address) bool {
-    switch kind {
-    case ponsparser.EventTokenLaunched:
-        return emitter == factory
-    case ponsparser.EventCurveBuy, ponsparser.EventCurveSell:
-        return emitter == curve
-    case ponsparser.EventKind("Transfer"), ponsparser.EventKind("Approval"):
-        return emitter == token
-    default:
-        return false
-    }
+filter := rbhparser.EventFilter{
+    IncludeProtocols: rbhparser.Protocols(
+        rbhparser.ProtocolPonsV2,
+        rbhparser.ProtocolBagsV2,
+    ),
+    IncludeKinds: rbhparser.EventKinds(
+        rbhparser.EventCurveBuy,
+        rbhparser.EventSwap,
+    ),
 }
-parsed, ok, err := ponsparser.ParseLogValidated(log, validator)
-if errors.Is(err, ponsparser.ErrUntrustedSource) {
-    // Reject a matching event signature emitted by an unknown contract.
-}
+
+events, err := parser.ParseReceiptFiltered(receipt, filter)
 ```
 
-Use `ParseReceiptEventsFiltered` or `ParseLogsFiltered` for normal multi-contract receipts. They decode trusted events and skip recognized signatures from other contracts, such as the token `Transfer` emitted before the factory's `TokenLaunched`. Use the strict `Validated` variants when an unexpected matching signature must abort processing as a security signal. Trusted malformed logs always return an error in both modes.
+Excluded output does not prevent internal registry updates. This keeps later
+pool and curve attribution correct when launch notifications are filtered out.
 
-### Decode Revert Data
+## Restore known registrations
 
 ```go
-decoded, ok, err := ponsparser.ParseError(revertData)
-if err != nil {
-    panic(err)
+registry := rbhparser.NewRegistry()
+if err := registry.Restore(snapshot); err != nil {
+    return err
 }
-if ok {
-    fmt.Println(decoded.Name, decoded.Values)
-}
+parser := rbhparser.NewWithRegistry(rbhparser.DefaultAddressBook(), registry)
 ```
 
-### Build Filter Topics
-
-```go
-query := ethereum.FilterQuery{
-    Addresses: []common.Address{factory, curve},
-    Topics:    ponsparser.TopicsForCurveTrades(),
-}
-```
-
-## Project Structure
-
-```text
-.
-├── ponsparser/                # Parser SDK package
-├── examples/parse_receipt/    # Basic receipt parser example
-├── go.mod
-└── go.sum
-```
+Persist only finalized state in production and apply speculative state to an
+overlay registry owned by the application.
 
 ## Development
 
 ```bash
 go test ./...
+go test -race ./...
+go vet ./...
 ```
 
-## Important Notes
+Live deployment verification is opt-in:
 
-1. Public integration behavior follows [docs.ponsfamily.com/v2](https://docs.ponsfamily.com/v2). Event and error details that are incomplete in the docs are filled from `contractsV2/src/v2` in [ponsdotdev/ponsfamily](https://github.com/ponsdotdev/ponsfamily).
-2. Events with overloaded raw names are returned as `GenericEvent`; use `RawName` for display and `Name` for ABI-internal uniqueness.
-3. Indexed dynamic Solidity values, if added in future ABIs, can only be recovered as topic hashes.
-4. Pair this SDK with `pons-trade-sdk` when you need calldata builders or contract reads.
-5. `ParseLog` and `ParseReceiptEvents` are low-level, unauthenticated decoders. Production receipt consumers should default to `Filtered`; use strict `Validated` parsing when an untrusted matching topic must be treated as an error.
-6. `ParsedEvent.Log` preserves block, transaction, index, and `Removed` metadata so indexers can reverse events after a chain reorganization.
-7. `AddressAllowlist` is a convenience for sources with the same trust role. Use a kind-aware `SourceValidator` when different contracts are allowed to emit different events.
-8. Recognized events require an exact topic count and canonical indexed address, boolean, integer, and fixed-bytes encodings; malformed trusted logs return an error.
-9. `ParseError` distinguishes Solidity `Panic(uint256)` from `Error(string)`. Exported ABI variables are compatibility snapshots and cannot mutate the parser's internal registry.
-10. Recognized log and revert payloads are limited to 1 MiB and must use canonical ABI encoding; trailing data, malformed offsets, and ambiguous 4-byte custom-error selectors return errors.
-11. `ParsedEvent.Log` is a shallow copy for hot-path efficiency: its `Data` and `Topics` slices retain caller-owned backing storage. Copy those slices before mutating the source log or sharing it with code that may mutate it concurrently.
+```bash
+ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com go test ./rbhparser -run TestRobinhoodDeployment
+```
 
 ## License
 
-MIT
-
-## Contact
-
-- Website: [fnzero.dev](https://fnzero.dev/)
-- Telegram: [fnzero_group](https://t.me/fnzero_group)
-- Discord: [FnZero Discord](https://discord.gg/vuazbGkqQE)
+MIT. See [LICENSE](LICENSE).
