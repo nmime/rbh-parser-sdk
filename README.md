@@ -149,10 +149,13 @@ go test -race ./...
 go vet ./...
 ```
 
-Live deployment verification is opt-in:
+Live deployment and receipt verification is opt-in. It checks runtime code for
+all six protocols and parses fixed mainnet launch receipts for Pons V2, Long,
+o1, Pools.trade, and PAIR. Bags V2 launch decoding is covered offline because
+the current mainnet factory has not emitted its first launch event yet.
 
 ```bash
-ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com go test ./rbhparser -run TestRobinhoodDeployment
+ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com go test ./rbhparser -run TestRobinhood -count=1 -v
 ```
 
 ## License

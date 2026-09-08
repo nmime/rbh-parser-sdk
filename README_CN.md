@@ -139,10 +139,13 @@ go test -race ./...
 go vet ./...
 ```
 
-在线部署校验默认跳过，需要显式提供 RPC：
+在线部署与 Receipt 校验默认跳过，需要显式提供 RPC。测试会检查六个平台合约
+的 runtime code，并解析 Pons V2、Long、o1、Pools.trade、PAIR 的固定主网
+Launch Receipt。Bags V2 主网工厂尚未发出首次 Launch 事件，因此其 Launch
+解码目前由离线 ABI 测试覆盖。
 
 ```bash
-ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com go test ./rbhparser -run TestRobinhoodDeployment
+ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com go test ./rbhparser -run TestRobinhood -count=1 -v
 ```
 
 ## License
