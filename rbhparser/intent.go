@@ -1193,31 +1193,6 @@ type dynamicBytesArray struct {
 	length    int
 }
 
-func validateAddressArray(data []byte, offset int) error {
-	lengthWord, err := subslice(data, offset, abiWordSize)
-	if err != nil {
-		return err
-	}
-	length, err := wordToInt(lengthWord)
-	if err != nil {
-		return err
-	}
-	byteLength, err := checkedProduct(length, abiWordSize)
-	if err != nil {
-		return err
-	}
-	values, err := subslice(data, offset+abiWordSize, byteLength)
-	if err != nil {
-		return err
-	}
-	for index := range length {
-		if err := requireCleanAddresses(values, index); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func newDynamicBytesArray(data []byte, offset int) (dynamicBytesArray, error) {
 	lengthWord, err := subslice(data, offset, abiWordSize)
 	if err != nil {

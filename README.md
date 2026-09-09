@@ -1,10 +1,36 @@
-# RBH Parser SDK for Go
+<div align="center">
+  <h1>RBH Parser SDK for Go</h1>
+  <h3><em>Low-latency Robinhood Chain event, receipt, and calldata parsing</em></h3>
+</div>
 
-Low-latency, multi-protocol event and calldata parsing for Robinhood Chain.
+<p align="center">
+  <strong>Typed parsing for Pons V2, Long, o1, Pools.trade, PAIR, Bags V2, and Uniswap v4.</strong>
+</p>
+
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/0xfnzero/rbh-parser-sdk"><img src="https://pkg.go.dev/badge/github.com/0xfnzero/rbh-parser-sdk.svg" alt="Go Reference"></a>
+  <a href="https://github.com/0xfnzero/rbh-parser-sdk/releases/latest"><img src="https://img.shields.io/github/v/release/0xfnzero/rbh-parser-sdk" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+</p>
+
+<p align="center">
+  <a href="./README_CN.md">中文</a> |
+  <a href="./README.md">English</a> |
+  <a href="https://fnzero.dev/">Website</a> |
+  <a href="https://t.me/fnzero_group">Telegram</a> |
+  <a href="https://discord.gg/vuazbGkqQE">Discord</a>
+</p>
 
 The SDK is transport agnostic. It parses values supplied by the application and
 does not include official Feed, BlockRazor, WebSocket, RPC subscription, or
 network client implementations.
+
+## SDKs
+
+| SDK | Module |
+|-----|--------|
+| Parser | [`github.com/0xfnzero/rbh-parser-sdk`](https://github.com/0xfnzero/rbh-parser-sdk) |
+| Trade | [`github.com/0xfnzero/rbh-trade-sdk`](https://github.com/0xfnzero/rbh-trade-sdk) |
 
 ## Supported protocols
 
@@ -28,6 +54,11 @@ Use `SupportedProtocols()` for machine-readable capabilities and
 - Reconstructs and verifies Uniswap v4 `PoolKey` and pool IDs.
 - Associates launch, initialization, liquidity, swap, and curve events through
   a concurrency-safe local registry.
+- Completes new curve and pool registrations before decoding the first curve or
+  v4 trade in the same receipt.
+- Reports refunded Bags buys with consumed input in `CurveTrade.AmountIn`, while
+  `CurveTrade.Bags` preserves submitted quote, refund, fee split, and post-trade
+  virtual reserves.
 - Applies receipt registry updates transactionally: a malformed receipt cannot
   partially mutate parser state.
 - Supports snapshot and restore of known curve and pool registrations.

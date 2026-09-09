@@ -199,4 +199,19 @@ type CurveTrade struct {
 	AmountOut     *big.Int
 	Fee           *big.Int
 	Tax           *big.Int
+	Bags          *BagsCurveTradeDetails
+}
+
+// BagsCurveTradeDetails preserves the quote-side accounting and post-trade
+// virtual reserves emitted by a Bags bonding curve. GrossQuoteAmount is the
+// submitted quote input for buys and the pre-fee quote output for sells.
+type BagsCurveTradeDetails struct {
+	GrossQuoteAmount    *big.Int
+	NetQuoteAmount      *big.Int
+	RefundQuote         *big.Int
+	VaultFeeQuote       *big.Int
+	CreatorFeeWETH      *big.Int
+	PriceQuotePerToken  *big.Int
+	VirtualTokenReserve *big.Int
+	VirtualQuoteReserve *big.Int
 }

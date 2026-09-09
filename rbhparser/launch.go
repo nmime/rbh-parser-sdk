@@ -1,6 +1,7 @@
 package rbhparser
 
 import (
+	"bytes"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -57,8 +58,13 @@ func decodeLongLaunch(log gethtypes.Log) (Launch, error) {
 	if err != nil {
 		return Launch{}, err
 	}
-	values, err := longEventABI.Events["LaunchCreated"].Inputs.NonIndexed().Unpack(log.Data)
+	arguments := longEventABI.Events["LaunchCreated"].Inputs.NonIndexed()
+	values, err := arguments.Unpack(log.Data)
 	if err != nil || len(values) != 6 {
+		return Launch{}, ErrMalformedLog
+	}
+	canonical, err := arguments.Pack(values...)
+	if err != nil || !bytes.Equal(canonical, log.Data) {
 		return Launch{}, ErrMalformedLog
 	}
 	poolInitializer, ok0 := values[0].(common.Address)
@@ -162,8 +168,18 @@ func decodeBagsLaunch(log gethtypes.Log, quote common.Address) (Launch, error) {
 	if err != nil {
 		return Launch{}, err
 	}
-	values, err := bagsEventABI.Events["TokenCreated"].Inputs.NonIndexed().Unpack(log.Data)
+	for _, wordIndex := range [...]int{0, 1} {
+		if _, err := addressWord(log.Data, wordIndex); err != nil {
+			return Launch{}, err
+		}
+	}
+	arguments := bagsEventABI.Events["TokenCreated"].Inputs.NonIndexed()
+	values, err := arguments.Unpack(log.Data)
 	if err != nil || len(values) != 6 {
+		return Launch{}, ErrMalformedLog
+	}
+	canonical, err := arguments.Pack(values...)
+	if err != nil || !bytes.Equal(canonical, log.Data) {
 		return Launch{}, ErrMalformedLog
 	}
 	poolID, ok0 := values[2].([32]byte)
@@ -248,17 +264,43 @@ func decodeBagsCurveTrade(log gethtypes.Log, buy bool) (CurveTrade, error) {
 	if err != nil {
 		return CurveTrade{}, err
 	}
-	amountIn, err := uintWord(log.Data, 0, 256)
-	if err != nil {
-		return CurveTrade{}, err
+	values := make([]*big.Int, dataWords)
+	for i := range values {
+		value, err := uintWord(log.Data, i, 256)
+		if err != nil {
+			return CurveTrade{}, err
+		}
+		values[i] = value
 	}
-	amountOut, err := uintWord(log.Data, 2, 256)
-	if err != nil {
-		return CurveTrade{}, err
+	details := &BagsCurveTradeDetails{
+		GrossQuoteAmount: values[1],
+		NetQuoteAmount:   values[2],
+		RefundQuote:      new(big.Int),
+		VaultFeeQuote:    values[4],
+		CreatorFeeWETH:   values[5],
 	}
-	fee, err := uintWord(log.Data, 3, 256)
-	if err != nil {
-		return CurveTrade{}, err
+	amountIn, amountOut := values[0], values[2]
+	if buy {
+		details.GrossQuoteAmount = values[0]
+		details.NetQuoteAmount = values[1]
+		details.RefundQuote = values[6]
+		details.PriceQuotePerToken = values[7]
+		details.VirtualTokenReserve = values[8]
+		details.VirtualQuoteReserve = values[9]
+		if details.RefundQuote.Cmp(details.GrossQuoteAmount) > 0 {
+			return CurveTrade{}, ErrMalformedLog
+		}
+		amountIn = new(big.Int).Sub(details.GrossQuoteAmount, details.RefundQuote)
+	} else {
+		details.PriceQuotePerToken = values[6]
+		details.VirtualTokenReserve = values[7]
+		details.VirtualQuoteReserve = values[8]
 	}
-	return CurveTrade{BuyerOrSeller: actor, Recipient: recipient, AmountIn: amountIn, AmountOut: amountOut, Fee: fee, Tax: new(big.Int)}, nil
+	feeSplit := new(big.Int).Add(details.VaultFeeQuote, details.CreatorFeeWETH)
+	accountedGross := new(big.Int).Add(details.NetQuoteAmount, values[3])
+	accountedGross.Add(accountedGross, details.RefundQuote)
+	if feeSplit.Cmp(values[3]) != 0 || accountedGross.Cmp(details.GrossQuoteAmount) != 0 {
+		return CurveTrade{}, ErrMalformedLog
+	}
+	return CurveTrade{BuyerOrSeller: actor, Recipient: recipient, AmountIn: amountIn, AmountOut: amountOut, Fee: values[3], Tax: new(big.Int), Bags: details}, nil
 }

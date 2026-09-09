@@ -24,12 +24,22 @@ func NewWithRegistry(addresses AddressBook, registry *Registry) *Parser {
 	return &Parser{addresses: addresses, registry: registry}
 }
 
-func (p *Parser) Registry() *Registry { return p.registry }
+func (p *Parser) Registry() *Registry {
+	if p == nil {
+		return nil
+	}
+	return p.registry
+}
 
-func (p *Parser) Addresses() AddressBook { return p.addresses }
+func (p *Parser) Addresses() AddressBook {
+	if p == nil {
+		return AddressBook{}
+	}
+	return p.addresses
+}
 
 func (p *Parser) ParseLog(log gethtypes.Log) (Event, bool, error) {
-	if log.Removed || len(log.Topics) == 0 {
+	if p == nil || p.registry == nil || log.Removed || len(log.Topics) == 0 {
 		return Event{}, false, nil
 	}
 	topic := log.Topics[0]
@@ -197,6 +207,9 @@ func (p *Parser) launchEvent(log gethtypes.Log, protocol Protocol, launch Launch
 }
 
 func (p *Parser) ParseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
+	if p == nil || p.registry == nil {
+		return nil, ErrInvalidRegistration
+	}
 	if receipt == nil {
 		return nil, fmt.Errorf("nil receipt")
 	}
@@ -240,7 +253,7 @@ func (p *Parser) parseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
 		if logPtr == nil || logPtr.Removed {
 			continue
 		}
-		if len(logPtr.Topics) > 0 && logPtr.Address == p.addresses.PoolManager && logPtr.Topics[0] == topicPoolSwap {
+		if isDeferredReceiptTrade(logPtr, p.addresses.PoolManager) {
 			continue
 		}
 		event, ok, err := p.ParseLog(*logPtr)
@@ -317,8 +330,11 @@ func (p *Parser) parseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
 		}
 	}
 
+	// Trades can be emitted before the launch contract publishes the event that
+	// identifies their newly-created curve or pool. Decode them only after all
+	// registrations from the receipt have been staged.
 	for _, logPtr := range receipt.Logs {
-		if logPtr == nil || logPtr.Removed || len(logPtr.Topics) == 0 || logPtr.Address != p.addresses.PoolManager || logPtr.Topics[0] != topicPoolSwap {
+		if !isDeferredReceiptTrade(logPtr, p.addresses.PoolManager) {
 			continue
 		}
 		event, ok, err := p.ParseLog(*logPtr)
@@ -332,6 +348,17 @@ func (p *Parser) parseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
 
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Log.Index < events[j].Log.Index })
 	return events, nil
+}
+
+func isDeferredReceiptTrade(log *gethtypes.Log, poolManager common.Address) bool {
+	if log == nil || log.Removed || len(log.Topics) == 0 {
+		return false
+	}
+	topic := log.Topics[0]
+	if log.Address == poolManager && topic == topicPoolSwap {
+		return true
+	}
+	return topic == topicPonsCurveBuy || topic == topicPonsCurveSell || topic == topicBagsCurveBuy || topic == topicBagsCurveSell
 }
 
 func poolRegistrationFromPending(pending PendingPoolRegistration, initialized PoolInitialized) (PoolRegistration, error) {

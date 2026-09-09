@@ -1,9 +1,35 @@
-# RBH Parser SDK for Go
+<div align="center">
+  <h1>RBH Parser SDK for Go</h1>
+  <h3><em>面向 Robinhood Chain 事件、Receipt 与 calldata 的低延迟解析 SDK</em></h3>
+</div>
 
-面向 Robinhood Chain 的低延迟、多协议事件与 calldata 解析 SDK。
+<p align="center">
+  <strong>类型化解析 Pons V2、Long、o1、Pools.trade、PAIR、Bags V2 与 Uniswap v4。</strong>
+</p>
+
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/0xfnzero/rbh-parser-sdk"><img src="https://pkg.go.dev/badge/github.com/0xfnzero/rbh-parser-sdk.svg" alt="Go Reference"></a>
+  <a href="https://github.com/0xfnzero/rbh-parser-sdk/releases/latest"><img src="https://img.shields.io/github/v/release/0xfnzero/rbh-parser-sdk" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+</p>
+
+<p align="center">
+  <a href="./README_CN.md">中文</a> |
+  <a href="./README.md">English</a> |
+  <a href="https://fnzero.dev/">Website</a> |
+  <a href="https://t.me/fnzero_group">Telegram</a> |
+  <a href="https://discord.gg/vuazbGkqQE">Discord</a>
+</p>
 
 SDK 与数据传输层解耦：只解析由应用传入的数据，不包含官方 Feed、
 BlockRazor、WebSocket、RPC 订阅或其他网络客户端实现。
+
+## SDK
+
+| SDK | Go Module |
+|-----|-----------|
+| Parser | [`github.com/0xfnzero/rbh-parser-sdk`](https://github.com/0xfnzero/rbh-parser-sdk) |
+| Trade | [`github.com/0xfnzero/rbh-trade-sdk`](https://github.com/0xfnzero/rbh-trade-sdk) |
 
 ## 支持的协议
 
@@ -25,6 +51,9 @@ BlockRazor、WebSocket、RPC 订阅或其他网络客户端实现。
 - 严格校验 ABI word、带符号整数、地址填充、动态偏移及数据长度上限。
 - 重建并校验 Uniswap v4 `PoolKey` 与 pool ID。
 - 使用并发安全的本地注册表关联 Launch、初始化、流动性、Swap 和内盘事件。
+- 在解析同一 Receipt 的首笔 Curve/v4 成交前完成新 Curve 和 Pool 注册。
+- Bags 买入的 `CurveTrade.AmountIn` 表示扣除退款后的实际成交输入；提交金额、
+  退款、费用拆分与交易后虚拟储备保存在 `CurveTrade.Bags`。
 - Receipt 解析采用事务式注册表更新，解析失败不会留下部分状态。
 - 支持已知 curve 和 pool 注册信息的快照恢复。
 - 不会隐式调用 RPC 或任何网络接口。

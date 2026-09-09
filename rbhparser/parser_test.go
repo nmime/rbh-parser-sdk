@@ -2,6 +2,7 @@ package rbhparser
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"reflect"
 	"sync"
@@ -26,6 +27,30 @@ func abiArguments(t testing.TB, names ...string) abi.Arguments {
 }
 
 func addressTopic(address common.Address) common.Hash { return common.BytesToHash(address.Bytes()) }
+
+func TestNilParserPublicMethods(t *testing.T) {
+	var parser *Parser
+	if parser.Registry() != nil {
+		t.Fatal("nil parser returned a registry")
+	}
+	if parser.Addresses() != (AddressBook{}) {
+		t.Fatal("nil parser returned nonzero addresses")
+	}
+	if _, ok, err := parser.ParseLog(gethtypes.Log{Topics: []common.Hash{TopicPoolSwap}}); err != nil || ok {
+		t.Fatalf("nil parser ParseLog: ok=%v err=%v", ok, err)
+	}
+	if _, err := parser.ParseReceipt(&gethtypes.Receipt{}); !errors.Is(err, ErrInvalidRegistration) {
+		t.Fatalf("nil parser ParseReceipt error = %v", err)
+	}
+
+	parser = &Parser{}
+	if _, ok, err := parser.ParseLog(gethtypes.Log{Topics: []common.Hash{TopicPoolSwap}}); err != nil || ok {
+		t.Fatalf("registry-less parser ParseLog: ok=%v err=%v", ok, err)
+	}
+	if _, err := parser.ParseReceipt(&gethtypes.Receipt{}); !errors.Is(err, ErrInvalidRegistration) {
+		t.Fatalf("registry-less parser ParseReceipt error = %v", err)
+	}
+}
 
 func makeInitializeLog(t testing.TB, key PoolKey, index uint) gethtypes.Log {
 	t.Helper()
@@ -124,6 +149,48 @@ func TestLongTopicFromWrongEmitterIsIgnored(t *testing.T) {
 	}
 }
 
+func TestLongLaunchRejectsNonCanonicalData(t *testing.T) {
+	arguments := longEventABI.Events["LaunchCreated"].Inputs.NonIndexed()
+	data, err := arguments.Pack(
+		common.HexToAddress("0x41"),
+		common.HexToAddress("0x42"),
+		[32]byte{1},
+		big.NewInt(100),
+		big.NewInt(200),
+		"LONG",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeLog := func(data []byte) gethtypes.Log {
+		return gethtypes.Log{
+			Address: DefaultAddressBook().LongLauncher,
+			Topics: []common.Hash{
+				TopicLongLaunch,
+				addressTopic(common.HexToAddress("0x43")),
+				addressTopic(common.HexToAddress("0x43")),
+				addressTopic(common.HexToAddress("0x44")),
+			},
+			Data: data,
+		}
+	}
+
+	for _, wordIndex := range []int{0, 1} {
+		t.Run(fmt.Sprintf("address-word-%d", wordIndex), func(t *testing.T) {
+			malformed := append([]byte(nil), data...)
+			malformed[wordIndex*32] = 1
+			if _, _, err := New().ParseLog(makeLog(malformed)); !errors.Is(err, ErrMalformedLog) {
+				t.Fatalf("non-canonical address word error = %v", err)
+			}
+		})
+	}
+
+	trailing := append(append([]byte(nil), data...), make([]byte, 32)...)
+	if _, _, err := New().ParseLog(makeLog(trailing)); !errors.Is(err, ErrMalformedLog) {
+		t.Fatalf("trailing launch data error = %v", err)
+	}
+}
+
 func TestPonsCurveRequiresRegisteredEmitter(t *testing.T) {
 	parser := New()
 	curve := common.HexToAddress("0x30")
@@ -144,6 +211,82 @@ func TestPonsCurveRequiresRegisteredEmitter(t *testing.T) {
 	event, ok, err := parser.ParseLog(log)
 	if err != nil || !ok || event.Kind != EventCurveBuy {
 		t.Fatalf("registered curve not parsed: %#v ok=%v err=%v", event, ok, err)
+	}
+}
+
+func TestParseReceiptRegistersCurveBeforeEarlierTrade(t *testing.T) {
+	parser := New()
+	addresses := DefaultAddressBook()
+	token := common.HexToAddress("0x21")
+	curve := common.HexToAddress("0x22")
+	creator := common.HexToAddress("0x23")
+	actor := common.HexToAddress("0x24")
+	recipient := common.HexToAddress("0x25")
+
+	tradeData, err := abiArguments(t, "uint256", "uint256", "uint256", "uint256").Pack(big.NewInt(100), big.NewInt(90), big.NewInt(5), big.NewInt(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tradeLog := gethtypes.Log{
+		Address: curve,
+		Topics:  []common.Hash{TopicPonsCurveBuy, addressTopic(actor), addressTopic(recipient)},
+		Data:    tradeData,
+		Index:   1,
+	}
+	launchData, err := abiArguments(t, "address", "uint256", "uint256").Pack(common.Address{}, big.NewInt(7), big.NewInt(1_000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	launchLog := gethtypes.Log{
+		Address: addresses.PonsFactory,
+		Topics:  []common.Hash{TopicPonsLaunch, addressTopic(token), addressTopic(curve), addressTopic(creator)},
+		Data:    launchData,
+		Index:   2,
+	}
+
+	events, err := parser.ParseReceipt(&gethtypes.Receipt{Logs: []*gethtypes.Log{&tradeLog, &launchLog}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Kind != EventCurveBuy || events[0].Protocol != ProtocolPonsV2 || events[1].Kind != EventLaunch {
+		t.Fatalf("unexpected events: %#v", events)
+	}
+	trade, ok := events[0].Data.(CurveTrade)
+	if !ok || trade.AmountIn.Cmp(big.NewInt(100)) != 0 || trade.AmountOut.Cmp(big.NewInt(90)) != 0 {
+		t.Fatalf("unexpected curve trade: %#v", events[0].Data)
+	}
+}
+
+func TestParseReceiptRegistersBagsCurveBeforeEarlierTrade(t *testing.T) {
+	parser := New()
+	token := common.HexToAddress("0x31")
+	curve := common.HexToAddress("0x32")
+	poolID := common.HexToHash("0x33")
+
+	tradeData, err := abiArguments(t, "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256").Pack(
+		big.NewInt(100), big.NewInt(90), big.NewInt(1_000), big.NewInt(10), big.NewInt(5), big.NewInt(5), new(big.Int), big.NewInt(20), big.NewInt(30), big.NewInt(40),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tradeLog := gethtypes.Log{
+		Address: curve,
+		Topics:  []common.Hash{TopicBagsCurveBuy, addressTopic(common.HexToAddress("0x34")), addressTopic(common.HexToAddress("0x35"))},
+		Data:    tradeData,
+		Index:   1,
+	}
+	launchLog := makeBagsLaunchLog(t, token, curve, poolID, 2)
+
+	events, err := parser.ParseReceipt(&gethtypes.Receipt{Logs: []*gethtypes.Log{&tradeLog, &launchLog}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Kind != EventCurveBuy || events[0].Protocol != ProtocolBagsV2 || events[1].Kind != EventLaunch {
+		t.Fatalf("unexpected events: %#v", events)
+	}
+	trade, ok := events[0].Data.(CurveTrade)
+	if !ok || trade.AmountIn.Cmp(big.NewInt(100)) != 0 || trade.AmountOut.Cmp(big.NewInt(1_000)) != 0 || trade.Bags == nil {
+		t.Fatalf("unexpected Bags curve trade: %#v", events[0].Data)
 	}
 }
 
@@ -376,6 +519,26 @@ func TestMalformedBagsLaunchDoesNotPolluteRegistry(t *testing.T) {
 	}
 }
 
+func TestBagsLaunchRejectsNonCanonicalAddressWords(t *testing.T) {
+	for _, wordIndex := range []int{0, 1} {
+		t.Run(fmt.Sprintf("word-%d", wordIndex), func(t *testing.T) {
+			log := makeBagsLaunchLog(t, common.HexToAddress("0xa8"), common.HexToAddress("0xa9"), common.HexToHash("0xaa"), 1)
+			log.Data[wordIndex*32] = 1
+			if _, _, err := New().ParseLog(log); !errors.Is(err, ErrMalformedLog) {
+				t.Fatalf("non-canonical address word error = %v", err)
+			}
+		})
+	}
+}
+
+func TestBagsLaunchRejectsTrailingData(t *testing.T) {
+	log := makeBagsLaunchLog(t, common.HexToAddress("0xab"), common.HexToAddress("0xac"), common.HexToHash("0xad"), 1)
+	log.Data = append(log.Data, make([]byte, 32)...)
+	if _, _, err := New().ParseLog(log); !errors.Is(err, ErrMalformedLog) {
+		t.Fatalf("trailing launch data error = %v", err)
+	}
+}
+
 func TestConflictingBagsLaunchDoesNotPartiallyRegisterCurve(t *testing.T) {
 	parser := New()
 	token := common.HexToAddress("0xa1")
@@ -408,6 +571,34 @@ func TestFailedReceiptDoesNotPolluteRegistry(t *testing.T) {
 	}
 	if _, ok := parser.Registry().LookupCurve(curve); ok {
 		t.Fatal("failed receipt polluted curve registry")
+	}
+}
+
+func TestFailedDeferredTradeDoesNotPolluteRegistry(t *testing.T) {
+	parser := New()
+	token := common.HexToAddress("0xb4")
+	curve := common.HexToAddress("0xb5")
+	creator := common.HexToAddress("0xb6")
+	launchData, err := abiArguments(t, "address", "uint256", "uint256").Pack(common.Address{}, big.NewInt(1), big.NewInt(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	malformedTrade := gethtypes.Log{
+		Address: curve,
+		Topics:  []common.Hash{TopicPonsCurveBuy, addressTopic(common.HexToAddress("0xb7")), addressTopic(common.HexToAddress("0xb8"))},
+		Index:   1,
+	}
+	launch := gethtypes.Log{
+		Address: DefaultAddressBook().PonsFactory,
+		Topics:  []common.Hash{TopicPonsLaunch, addressTopic(token), addressTopic(curve), addressTopic(creator)},
+		Data:    launchData,
+		Index:   2,
+	}
+	if _, err := parser.ParseReceipt(&gethtypes.Receipt{Logs: []*gethtypes.Log{&malformedTrade, &launch}}); err == nil {
+		t.Fatal("malformed deferred trade was accepted")
+	}
+	if _, ok := parser.Registry().LookupCurve(curve); ok {
+		t.Fatal("failed deferred trade polluted curve registry")
 	}
 }
 
@@ -464,7 +655,52 @@ func TestRealBagsCurveTradeFixtures(t *testing.T) {
 			if trade.AmountIn.Text(16) != test.amountIn || trade.AmountOut.Text(16) != test.amountOut || trade.Fee.Text(16) != test.fee {
 				t.Fatalf("unexpected trade: %#v", trade)
 			}
+			if trade.Bags == nil || trade.Bags.VirtualTokenReserve.Sign() <= 0 || trade.Bags.VirtualQuoteReserve.Sign() <= 0 {
+				t.Fatalf("missing Bags trade details: %#v", trade.Bags)
+			}
 		})
+	}
+}
+
+func TestBagsCurveBuyUsesConsumedInputAfterRefund(t *testing.T) {
+	curve := common.HexToAddress("0xd1")
+	parser := New()
+	if err := parser.Registry().RegisterCurve(CurveRegistration{Curve: curve, Protocol: ProtocolBagsV2, Token: common.HexToAddress("0xd2"), Quote: DefaultAddressBook().WETH}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := abiArguments(t, "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256").Pack(
+		big.NewInt(100), big.NewInt(80), big.NewInt(1_000), big.NewInt(10), big.NewInt(5), big.NewInt(5), big.NewInt(10), big.NewInt(20), big.NewInt(30), big.NewInt(40),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := gethtypes.Log{Address: curve, Topics: []common.Hash{TopicBagsCurveBuy, addressTopic(common.HexToAddress("0xd3")), addressTopic(common.HexToAddress("0xd4"))}, Data: data}
+	event, ok, err := parser.ParseLog(log)
+	if err != nil || !ok {
+		t.Fatalf("parse Bags refund trade: ok=%v err=%v", ok, err)
+	}
+	trade := event.Data.(CurveTrade)
+	if trade.AmountIn.Cmp(big.NewInt(90)) != 0 || trade.AmountOut.Cmp(big.NewInt(1_000)) != 0 || trade.Bags == nil || trade.Bags.GrossQuoteAmount.Cmp(big.NewInt(100)) != 0 || trade.Bags.RefundQuote.Cmp(big.NewInt(10)) != 0 {
+		t.Fatalf("unexpected refunded Bags trade: %#v", trade)
+	}
+	badData := append([]byte(nil), data...)
+	copy(badData[6*32:7*32], common.LeftPadBytes(big.NewInt(101).Bytes(), 32))
+	log.Data = badData
+	if _, _, err := parser.ParseLog(log); !errors.Is(err, ErrMalformedLog) {
+		t.Fatalf("refund above gross input error = %v", err)
+	}
+	badData = append([]byte(nil), data...)
+	copy(badData[3*32:4*32], common.LeftPadBytes(big.NewInt(11).Bytes(), 32))
+	copy(badData[5*32:6*32], common.LeftPadBytes(big.NewInt(6).Bytes(), 32))
+	log.Data = badData
+	if _, _, err := parser.ParseLog(log); !errors.Is(err, ErrMalformedLog) {
+		t.Fatalf("inconsistent gross accounting error = %v", err)
+	}
+	badData = append([]byte(nil), data...)
+	copy(badData[5*32:6*32], common.LeftPadBytes(big.NewInt(6).Bytes(), 32))
+	log.Data = badData
+	if _, _, err := parser.ParseLog(log); !errors.Is(err, ErrMalformedLog) {
+		t.Fatalf("inconsistent fee split error = %v", err)
 	}
 }
 
@@ -506,16 +742,69 @@ func TestKnownPonsMemeHookAddress(t *testing.T) {
 
 func FuzzParseLogNoPanic(f *testing.F) {
 	f.Add([]byte{1, 2, 3}, uint8(2))
+	launch := makeBagsLaunchLog(f, common.HexToAddress("0xf1"), common.HexToAddress("0xf2"), common.HexToHash("0xf3"), 1)
+	f.Add(launch.Data, uint8(12)) // 4 topics, Bags launch mode.
+	longLaunch, err := longEventABI.Events["LaunchCreated"].Inputs.NonIndexed().Pack(
+		common.HexToAddress("0xf4"), common.HexToAddress("0xf5"), [32]byte{1}, big.NewInt(100), big.NewInt(200), "LONG",
+	)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(longLaunch, uint8(36)) // 4 topics, Long launch mode.
+	ponsLaunch, err := abiArguments(f, "address", "uint256", "uint256").Pack(common.Address{}, big.NewInt(1), big.NewInt(2))
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(ponsLaunch, uint8(44)) // 4 topics, Pons launch mode.
+	buyData, err := abiArguments(f, "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256").Pack(
+		big.NewInt(100), big.NewInt(80), big.NewInt(1_000), big.NewInt(10), big.NewInt(5), big.NewInt(5), big.NewInt(10), big.NewInt(20), big.NewInt(30), big.NewInt(40),
+	)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(buyData, uint8(19)) // 3 topics, Bags buy mode.
+	sellData, err := abiArguments(f, "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256").Pack(
+		big.NewInt(1_000), big.NewInt(100), big.NewInt(90), big.NewInt(10), big.NewInt(5), big.NewInt(5), big.NewInt(20), big.NewInt(30), big.NewInt(40),
+	)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(sellData, uint8(27)) // 3 topics, Bags sell mode.
 	f.Fuzz(func(t *testing.T, data []byte, topicCount uint8) {
 		if len(data) > maxLogDataBytes+1 {
 			data = data[:maxLogDataBytes+1]
 		}
 		count := int(topicCount % 8)
 		topics := make([]common.Hash, count)
+		parser := New()
+		address := DefaultAddressBook().PoolManager
 		if count > 0 {
-			topics[0] = TopicPoolInitialize
+			switch (topicCount / 8) % 6 {
+			case 0:
+				topics[0] = TopicPoolInitialize
+			case 1:
+				address = DefaultAddressBook().BagsFactory
+				topics[0] = TopicBagsCreated
+			case 2, 3:
+				curve := common.HexToAddress("0xf2")
+				address = curve
+				if err := parser.Registry().RegisterCurve(CurveRegistration{Curve: curve, Protocol: ProtocolBagsV2, Token: common.HexToAddress("0xf1"), Quote: DefaultAddressBook().WETH}); err != nil {
+					t.Fatal(err)
+				}
+				if (topicCount/8)%4 == 2 {
+					topics[0] = TopicBagsCurveBuy
+				} else {
+					topics[0] = TopicBagsCurveSell
+				}
+			case 4:
+				address = DefaultAddressBook().LongLauncher
+				topics[0] = TopicLongLaunch
+			case 5:
+				address = DefaultAddressBook().PonsFactory
+				topics[0] = TopicPonsLaunch
+			}
 		}
-		_, _, _ = New().ParseLog(gethtypes.Log{Address: DefaultAddressBook().PoolManager, Topics: topics, Data: data})
+		_, _, _ = parser.ParseLog(gethtypes.Log{Address: address, Topics: topics, Data: data})
 	})
 }
 
