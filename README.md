@@ -67,7 +67,7 @@ Use `SupportedProtocols()` for machine-readable capabilities and
 ## Installation
 
 ```bash
-go get github.com/0xfnzero/rbh-parser-sdk@latest
+go get github.com/0xfnzero/rbh-parser-sdk@v0.3.0
 ```
 
 ## Parse a receipt

@@ -61,7 +61,7 @@ BlockRazor、WebSocket、RPC 订阅或其他网络客户端实现。
 ## 安装
 
 ```bash
-go get github.com/0xfnzero/rbh-parser-sdk@latest
+go get github.com/0xfnzero/rbh-parser-sdk@v0.3.0
 ```
 
 ## 解析 Receipt
