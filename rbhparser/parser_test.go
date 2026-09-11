@@ -384,6 +384,62 @@ func TestPendingPoolConnectsLaterInitializeAndSwap(t *testing.T) {
 	}
 }
 
+func TestCanonicalBagsInitializeRegistersWithoutEarlierLaunch(t *testing.T) {
+	parser := New()
+	addresses := DefaultAddressBook()
+	token := common.HexToAddress("0xf000000000000000000000000000000000000001")
+	key := PoolKey{
+		Currency0: addresses.WETH, Currency1: token,
+		Fee: 1 << 23, TickSpacing: 60, Hooks: addresses.BagsHook,
+	}
+	id, err := PoolID(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, ok, err := parser.ParseLog(makeInitializeLog(t, key, 1))
+	if err != nil || !ok || event.Protocol != ProtocolBagsV2 {
+		t.Fatalf("parse canonical Bags initialize: event=%#v ok=%v err=%v", event, ok, err)
+	}
+	registration, ok := parser.Registry().LookupPool(id)
+	if !ok || registration.Protocol != ProtocolBagsV2 || registration.Token != token || registration.Quote != addresses.WETH {
+		t.Fatalf("canonical Bags pool was not registered: %#v ok=%v", registration, ok)
+	}
+}
+
+func TestBagsInitializeInferenceRequiresExactCanonicalPoolKey(t *testing.T) {
+	addresses := DefaultAddressBook()
+	token := common.HexToAddress("0xf000000000000000000000000000000000000001")
+	valid := PoolKey{Currency0: addresses.WETH, Currency1: token, Fee: 1 << 23, TickSpacing: 60, Hooks: addresses.BagsHook}
+	tests := []struct {
+		name string
+		key  PoolKey
+	}{
+		{name: "wrong hook", key: func() PoolKey { key := valid; key.Hooks = common.HexToAddress("0x1"); return key }()},
+		{name: "static fee", key: func() PoolKey { key := valid; key.Fee = 3_000; return key }()},
+		{name: "wrong spacing", key: func() PoolKey { key := valid; key.TickSpacing = 8; return key }()},
+		{name: "without WETH", key: PoolKey{Currency0: common.HexToAddress("0x1"), Currency1: token, Fee: 1 << 23, TickSpacing: 60, Hooks: addresses.BagsHook}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parser := New()
+			event, ok, err := parser.ParseLog(makeInitializeLog(t, test.key, 1))
+			if err != nil || !ok {
+				t.Fatalf("parse initialize: ok=%v err=%v", ok, err)
+			}
+			if event.Protocol != ProtocolUnknown {
+				t.Fatalf("protocol = %v, want unknown", event.Protocol)
+			}
+			id, err := PoolID(test.key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, registered := parser.Registry().LookupPool(id); registered {
+				t.Fatal("non-canonical Bags pool was registered")
+			}
+		})
+	}
+}
+
 func TestStreamingBagsLaunchRegistersAndClearsPendingPool(t *testing.T) {
 	parser := New()
 	token := common.HexToAddress("0xf000000000000000000000000000000000000001")

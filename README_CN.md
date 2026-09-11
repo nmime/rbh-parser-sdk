@@ -56,6 +56,7 @@ BlockRazor、WebSocket、RPC 订阅或其他网络客户端实现。
   退款、费用拆分与交易后虚拟储备保存在 `CurveTrade.Bags`。
 - Receipt 解析采用事务式注册表更新，解析失败不会留下部分状态。
 - 支持已知 curve 和 pool 注册信息的快照恢复。
+- 即使未观察到更早的 Bags `TokenCreated`，精确匹配官方 Bags Hook、WETH、dynamic fee 和 tick spacing 的 `Initialize` 也会注册为 Bags V2；官方 Hook 只允许其已注册 bonding curve 初始化该池。
 - 不会隐式调用 RPC 或任何网络接口。
 
 ## 安装

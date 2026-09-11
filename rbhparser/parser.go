@@ -62,6 +62,11 @@ func (p *Parser) ParseLog(log gethtypes.Log) (Event, bool, error) {
 					return Event{}, false, registrationErr
 				}
 				protocol = pending.Protocol
+			} else if registration, ok := canonicalBagsPoolRegistration(initialized, p.addresses); ok {
+				if registrationErr := p.registry.RegisterPool(registration); registrationErr != nil {
+					return Event{}, false, registrationErr
+				}
+				protocol = ProtocolBagsV2
 			}
 			return Event{Kind: EventPoolInitialized, Protocol: protocol, Data: initialized, Log: log}, true, nil
 		case topicPoolSwap:
@@ -145,6 +150,40 @@ func (p *Parser) ParseLog(log gethtypes.Log) (Event, bool, error) {
 		return Event{Kind: kind, Protocol: registration.Protocol, Data: trade, Log: log}, true, nil
 	}
 	return Event{}, false, nil
+}
+
+func canonicalBagsPoolRegistration(initialized PoolInitialized, addresses AddressBook) (PoolRegistration, bool) {
+	key := initialized.PoolKey
+	if initialized.PoolID == (common.Hash{}) || key.Hooks != addresses.BagsHook || key.Fee != 1<<23 || key.TickSpacing != 60 {
+		return PoolRegistration{}, false
+	}
+	var token common.Address
+	switch {
+	case key.Currency0 == addresses.WETH:
+		token = key.Currency1
+	case key.Currency1 == addresses.WETH:
+		token = key.Currency0
+	default:
+		return PoolRegistration{}, false
+	}
+	if token == (common.Address{}) || token == addresses.WETH {
+		return PoolRegistration{}, false
+	}
+	return PoolRegistration{
+		PoolID: initialized.PoolID, Protocol: ProtocolBagsV2,
+		Token: token, Quote: addresses.WETH, PoolKey: key,
+	}, true
+}
+
+// IsCanonicalBagsV4Pool reports whether a PoolKey can only be initialized by
+// a bonding curve registered in the canonical Bags hook.
+func IsCanonicalBagsV4Pool(key PoolKey) bool {
+	id, err := PoolID(key)
+	if err != nil {
+		return false
+	}
+	_, ok := canonicalBagsPoolRegistration(PoolInitialized{PoolID: id, PoolKey: key}, DefaultAddressBook())
+	return ok
 }
 
 // ParseLogFiltered preserves registry updates while suppressing output that

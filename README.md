@@ -62,6 +62,9 @@ Use `SupportedProtocols()` for machine-readable capabilities and
 - Applies receipt registry updates transactionally: a malformed receipt cannot
   partially mutate parser state.
 - Supports snapshot and restore of known curve and pool registrations.
+- Registers an exact canonical Bags hook/WETH/dynamic-fee/tick-spacing
+  `Initialize` without requiring an earlier observed `TokenCreated`; the hook
+  only permits its registered bonding curve to initialize the pool.
 - Performs no hidden RPC or network calls.
 
 ## Installation
