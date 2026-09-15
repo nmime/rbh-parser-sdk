@@ -26,37 +26,54 @@ const (
 )
 
 var (
-	selectorExecute          = methodSelector("execute(bytes,bytes[],uint256)")
-	selectorExecuteBatch     = [4]byte{0x34, 0xfc, 0xd5, 0xbe} // executeBatch((address,uint256,bytes)[])
-	selectorExecuteBatchAuth = [4]byte{0xb0, 0xda, 0x32, 0x9a} // EIP-7702 batch of (target,value,data,authData)
-	selectorTargetCall       = [4]byte{0xc6, 0x31, 0x43, 0x68} // target and dynamic calldata envelope
-	selectorTargetCallV2     = [4]byte{0xe1, 0xb7, 0x7d, 0xb5} // target and dynamic calldata envelope
-	selectorPons7702Launch   = [4]byte{0x84, 0xd5, 0xb1, 0x5d} // EIP-7702 Pons launch envelope
-	selectorExecuteMode      = [4]byte{0xe9, 0xae, 0x5c, 0x53} // execute(bytes32,bytes)
-	selectorAggregate3Value  = [4]byte{0x17, 0x4d, 0xea, 0x71} // aggregate3Value((address,bool,uint256,bytes)[])
-	selectorAtomicLaunchV2   = [4]byte{0x1e, 0x53, 0xb2, 0x3e} // executeAtomicLaunchV2(...)
-	selectorPonsBuy          = methodSelector("buy(uint256,uint256,address)")
-	selectorPonsSell         = methodSelector("sell(uint256,uint256,address)")
-	selectorPonsLaunch       = methodSelector("launchToken((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address)")
-	selectorPonsLaunchExempt = methodSelector("launchToken((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address,address[])")
-	selectorPonsLaunchAndBuy = methodSelector("launchAndBuy((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address,uint256,uint256,address,address[])")
-	selectorO1Launch         = methodSelector("createLaunch((string,string,string,bytes32,address,uint64,uint64,bool,string[],string[]))")
-	selectorO1LaunchAndBuy   = methodSelector("createLaunchAndBuy((string,string,string,bytes32,address,uint64,uint64,bool,string[],string[]),(address,uint256,uint256,bytes))")
-	selectorBagsCreate       = methodSelector("create(string,string,string,address,address[],uint16[])")
-	selectorBagsCreateAndBuy = methodSelector("createAndBuy(string,string,string,address,address[],uint16[])")
-	selectorBagsBuy          = methodSelector("buy(uint256)")
-	selectorBagsBuyFor       = methodSelector("buyFor(address,uint256)")
-	selectorBagsSell         = methodSelector("sell(uint256,uint256)")
-	selectorBagsSellFor      = methodSelector("sellFor(address,uint256,uint256)")
-	selectorLongCreate       = methodSelector("create((uint256,uint256,address,address,bytes,address,bytes,address,bytes,address,bytes,address,bytes32))")
-	selectorPAIRLaunch       = methodSelector("launchTokenMulti((string,string,string,bytes32,(address,uint16)[],address,address,uint8,uint256,uint256,uint256))")
-	selectorPoolsCreateToken = methodSelector("createToken(address,string,string,uint8,uint128,address,bytes)")
+	selectorExecute               = methodSelector("execute(bytes,bytes[],uint256)")
+	selectorExecuteBatch          = [4]byte{0x34, 0xfc, 0xd5, 0xbe} // executeBatch((address,uint256,bytes)[])
+	selectorExecuteBatchAuth      = [4]byte{0xb0, 0xda, 0x32, 0x9a} // EIP-7702 batch of (target,value,data,authData)
+	selectorTargetCall            = [4]byte{0xc6, 0x31, 0x43, 0x68} // target and dynamic calldata envelope
+	selectorTargetCallV2          = [4]byte{0xe1, 0xb7, 0x7d, 0xb5} // target and dynamic calldata envelope
+	selectorExtendedTargetCall    = [4]byte{0xf9, 0x55, 0x75, 0x1f} // target, calldata and value followed by an extended static head
+	selectorExtendedTargetCallV2  = [4]byte{0x89, 0x94, 0x21, 0x33} // alternate extended target, calldata and value envelope
+	selectorPons7702Launch        = [4]byte{0x84, 0xd5, 0xb1, 0x5d} // EIP-7702 Pons launch envelope
+	selectorExecuteMode           = [4]byte{0xe9, 0xae, 0x5c, 0x53} // execute(bytes32,bytes)
+	selectorAggregate3Value       = [4]byte{0x17, 0x4d, 0xea, 0x71} // aggregate3Value((address,bool,uint256,bytes)[])
+	selectorAtomicLaunchV2        = [4]byte{0x1e, 0x53, 0xb2, 0x3e} // executeAtomicLaunchV2(...)
+	selectorEmbeddedPonsLaunchV1  = [4]byte{0x08, 0xaf, 0xcd, 0x5c} // self-call wallet envelope with an ABI-aligned Pons launchAndBuy payload
+	selectorEmbeddedPonsLaunchV2  = [4]byte{0x3f, 0x70, 0x7e, 0x6b} // alternate self-call wallet envelope with an ABI-aligned Pons launchAndBuy payload
+	selectorPonsBuy               = methodSelector("buy(uint256,uint256,address)")
+	selectorPonsSell              = methodSelector("sell(uint256,uint256,address)")
+	selectorPonsLaunch            = methodSelector("launchToken((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address)")
+	selectorPonsLaunchExempt      = methodSelector("launchToken((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address,address[])")
+	selectorPonsLaunchAndBuy      = methodSelector("launchAndBuy((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address,uint256,uint256,address,address[])")
+	selectorO1Launch              = methodSelector("createLaunch((string,string,string,bytes32,address,uint64,uint64,bool,string[],string[]))")
+	selectorO1LaunchAndBuy        = methodSelector("createLaunchAndBuy((string,string,string,bytes32,address,uint64,uint64,bool,string[],string[]),(address,uint256,uint256,bytes))")
+	selectorO1SetFeeConfig        = methodSelector("setFeeConfiguration((uint16,uint16,uint32,(bytes32,uint8,address,uint16)[]))")
+	selectorBagsCreate            = methodSelector("create(string,string,string,address,address[],uint16[])")
+	selectorBagsCreateAndBuy      = methodSelector("createAndBuy(string,string,string,address,address[],uint16[])")
+	selectorBagsBuy               = methodSelector("buy(uint256)")
+	selectorBagsBuyFor            = methodSelector("buyFor(address,uint256)")
+	selectorBagsSell              = methodSelector("sell(uint256,uint256)")
+	selectorBagsSellFor           = methodSelector("sellFor(address,uint256,uint256)")
+	selectorLongCreate            = methodSelector("create((uint256,uint256,address,address,bytes,address,bytes,address,bytes,address,bytes,address,bytes32))")
+	selectorPAIRLaunch            = methodSelector("launchTokenMulti((string,string,string,bytes32,(address,uint16)[],address,address,uint8,uint256,uint256,uint256))")
+	selectorPoolsCreateToken      = methodSelector("createToken(address,string,string,uint8,uint128,address,bytes)")
+	selectorLetsCashBuy           = [4]byte{0xf8, 0x90, 0xc8, 0x2b}
+	selectorVaroBuy               = methodSelector("buy(address,uint256,uint256)")
+	selectorVaroSell              = methodSelector("sell(address,address,uint256,uint256,uint256)")
+	selectorVaroSetFee            = methodSelector("setLaunchProtocolFee(address,uint16)")
+	selectorVirtualsBuy           = [4]byte{0x73, 0x46, 0xbe, 0x70} // native-router buy; five static ABI words
+	selectorVirtualsSell          = methodSelector("sell(address,uint256,uint256,uint256,uint256)")
+	selectorVirtualsLaunch        = [4]byte{0x21, 0x40, 0x13, 0xca} // launch(address)
+	selectorVirtualsSetTax        = [4]byte{0x93, 0x6b, 0x29, 0x34} // setProjectTaxRates(uint16,uint16)
+	selectorVirtualsFactorySetTax = methodSelector("setTaxParams(address,uint256,uint256,uint256,address)")
+	selectorGMGNSwap              = [4]byte{0x4d, 0x81, 0x9a, 0x2a}
+	selectorV2BuyFeeOnTransfer    = methodSelector("swapExactETHForTokensSupportingFeeOnTransferTokens(uint256,address[],address,uint256)")
+	selectorV2SellFeeOnTransfer   = methodSelector("swapExactTokensForETHSupportingFeeOnTransferTokens(uint256,uint256,address[],address,uint256)")
 )
 
 type IntentVisitor func(TransactionIntent) error
 
-// IsPotentialIntent performs a cheap destination and selector check, avoiding
-// signature recovery for unrelated traffic regardless of transaction source.
+// IsPotentialIntent is intended for blockrazor.Config.Filter. It only inspects
+// destination and selector, avoiding signature recovery for unrelated traffic.
 func (p *Parser) IsPotentialIntent(tx *gethtypes.Transaction) bool {
 	return p.IsPotentialIntentWithFilter(tx, IntentFilter{})
 }
@@ -69,7 +86,7 @@ func (p *Parser) IsPotentialIntentWithFilter(tx *gethtypes.Transaction, filter I
 		return false
 	}
 	data := tx.Data()
-	if len(data) < 4 {
+	if len(data) < 4 || len(data)-4 > maxLogDataBytes {
 		return false
 	}
 	to := tx.To()
@@ -99,6 +116,9 @@ func (p *Parser) isPotentialCall(call intentCall, filter IntentFilter, depth int
 		}
 		return false
 	}
+	if registration, ok := p.registry.LookupToken(call.contract); ok && registration.Protocol == ProtocolVirtuals {
+		return selector == selectorVirtualsSetTax && filter.matchClassification(ProtocolVirtuals, IntentFeePolicy)
+	}
 	switch call.contract {
 	case p.addresses.UniversalRouter:
 		return filter.matchContract(call.contract) && selector == selectorExecute && filter.mayMatchV4()
@@ -108,7 +128,8 @@ func (p *Parser) isPotentialCall(call intentCall, filter IntentFilter, depth int
 		return filter.matchContract(call.contract) && selector == selectorPonsLaunchAndBuy && filter.matchClassification(ProtocolPonsV2, IntentLaunchAndBuy)
 	case p.addresses.O1Factory:
 		return filter.matchContract(call.contract) && ((selector == selectorO1Launch && filter.matchClassification(ProtocolO1, IntentLaunch)) ||
-			(selector == selectorO1LaunchAndBuy && filter.matchClassification(ProtocolO1, IntentLaunchAndBuy)))
+			(selector == selectorO1LaunchAndBuy && filter.matchClassification(ProtocolO1, IntentLaunchAndBuy)) ||
+			(selector == selectorO1SetFeeConfig && filter.matchClassification(ProtocolO1, IntentFeePolicy)))
 	case p.addresses.BagsFactory:
 		return filter.matchContract(call.contract) && ((selector == selectorBagsCreate && filter.matchClassification(ProtocolBagsV2, IntentLaunch)) ||
 			(selector == selectorBagsCreateAndBuy && filter.matchClassification(ProtocolBagsV2, IntentLaunchAndBuy)))
@@ -118,6 +139,27 @@ func (p *Parser) isPotentialCall(call intentCall, filter IntentFilter, depth int
 		return filter.matchContract(call.contract) && selector == selectorPAIRLaunch && (filter.matchClassification(ProtocolPAIR, IntentLaunch) || filter.matchClassification(ProtocolPAIR, IntentLaunchAndBuy))
 	case p.addresses.PoolsEntry:
 		return filter.matchContract(call.contract) && selector == selectorPoolsCreateToken && filter.matchClassification(ProtocolPoolsTrade, IntentLaunch)
+	case p.addresses.LetsCashRouter:
+		return filter.matchContract(call.contract) && selector == selectorLetsCashBuy && filter.matchClassification(ProtocolLetsCash, IntentBuy)
+	case p.addresses.VaroRouter:
+		return filter.matchContract(call.contract) && ((selector == selectorVaroBuy && filter.matchClassification(ProtocolVaro, IntentBuy)) ||
+			(selector == selectorVaroSell && filter.matchClassification(ProtocolVaro, IntentSell)))
+	case p.addresses.VaroLaunchpad:
+		return filter.matchContract(call.contract) && selector == selectorVaroSetFee && filter.matchClassification(ProtocolVaro, IntentFeePolicy)
+	case p.addresses.VirtualsRouter:
+		return filter.matchContract(call.contract) && ((selector == selectorVirtualsBuy && filter.matchClassification(ProtocolVirtuals, IntentBuy)) ||
+			(selector == selectorVirtualsSell && filter.matchClassification(ProtocolVirtuals, IntentSell)))
+	case p.addresses.VirtualsLaunchpad:
+		return filter.matchContract(call.contract) && selector == selectorVirtualsLaunch && filter.matchClassification(ProtocolVirtuals, IntentLaunch)
+	case p.addresses.VirtualsFactory:
+		return filter.matchContract(call.contract) && selector == selectorVirtualsFactorySetTax && filter.matchClassification(ProtocolVirtuals, IntentFeePolicy)
+	case p.addresses.GMGNRouter:
+		return filter.matchContract(call.contract) && selector == selectorGMGNSwap &&
+			(filter.matchClassification(ProtocolFlapTax, IntentBuy) || filter.matchClassification(ProtocolFlapTax, IntentSell) ||
+				filter.matchClassification(ProtocolFlapStocks, IntentBuy) || filter.matchClassification(ProtocolFlapStocks, IntentSell))
+	case p.addresses.UniswapV2Router:
+		return filter.matchContract(call.contract) && ((selector == selectorV2BuyFeeOnTransfer && (filter.matchClassification(ProtocolFlapTax, IntentBuy) || filter.matchClassification(ProtocolFlapStocks, IntentBuy))) ||
+			(selector == selectorV2SellFeeOnTransfer && (filter.matchClassification(ProtocolFlapTax, IntentSell) || filter.matchClassification(ProtocolFlapStocks, IntentSell))))
 	}
 	if depth >= maxNestedIntentDepth {
 		return false
@@ -143,7 +185,7 @@ func (p *Parser) isPotentialCall(call intentCall, filter IntentFilter, depth int
 				return true
 			}
 		}
-	case selectorTargetCall, selectorTargetCallV2:
+	case selectorTargetCall, selectorTargetCallV2, selectorExtendedTargetCall, selectorExtendedTargetCallV2:
 		contract, data, err := targetCallView(args)
 		child := intentCall{transaction: call.transaction, contract: contract, data: data}
 		return err == nil && p.isPotentialCall(child, filter, depth+1)
@@ -171,6 +213,9 @@ func (p *Parser) isPotentialCall(call intentCall, filter IntentFilter, depth int
 		return p.anyPotentialCall(call, calls, filter, depth)
 	case selectorAtomicLaunchV2:
 		return filter.matchContract(p.addresses.PonsFactory) && filter.matchClassification(ProtocolPonsV2, IntentLaunch)
+	case selectorEmbeddedPonsLaunchV1, selectorEmbeddedPonsLaunchV2:
+		return (filter.matchContract(p.addresses.PonsLaunchAndBuy) || filter.matchContract(p.addresses.PonsFactory)) &&
+			(filter.matchClassification(ProtocolPonsV2, IntentLaunch) || filter.matchClassification(ProtocolPonsV2, IntentLaunchAndBuy))
 	}
 	return false
 }
@@ -196,6 +241,8 @@ func (k IntentKind) String() string {
 		return "launch"
 	case IntentLaunchAndBuy:
 		return "launch-and-buy"
+	case IntentFeePolicy:
+		return "fee-policy"
 	default:
 		return "unknown"
 	}
@@ -278,6 +325,9 @@ func (p *Parser) visitCallIntents(call intentCall, depth int, visit IntentVisito
 	if len(call.data) < 4 {
 		return 0, nil
 	}
+	if len(call.data)-4 > maxLogDataBytes {
+		return 0, malformedCalldata("router calldata exceeds maximum size")
+	}
 	selector := [4]byte(call.data[:4])
 
 	if registration, ok := p.registry.LookupCurve(call.contract); ok {
@@ -289,6 +339,13 @@ func (p *Parser) visitCallIntents(call intentCall, depth int, visit IntentVisito
 			return 0, err
 		}
 		return 1, nil
+	}
+	if registration, ok := p.registry.LookupToken(call.contract); ok && registration.Protocol == ProtocolVirtuals {
+		if selector != selectorVirtualsSetTax {
+			return 0, nil
+		}
+		intent, err := parseVirtualsTaxUpdate(call, registration)
+		return emitOne(intent, err, visit)
 	}
 
 	switch call.contract {
@@ -318,7 +375,11 @@ func (p *Parser) visitCallIntents(call intentCall, depth int, visit IntentVisito
 			intent, err := parseO1LaunchAndBuy(call, call.data[4:])
 			return emitOne(intent, err, visit)
 		case selectorO1Launch:
-			return emitOne(baseIntent(call, ProtocolO1, IntentLaunch), nil, visit)
+			intent, err := parseO1Launch(call, call.data[4:])
+			return emitOne(intent, err, visit)
+		case selectorO1SetFeeConfig:
+			intent, err := parseO1FeePolicy(call, call.data[4:])
+			return emitOne(intent, err, visit)
 		}
 	case p.addresses.BagsFactory:
 		switch selector {
@@ -330,7 +391,8 @@ func (p *Parser) visitCallIntents(call intentCall, depth int, visit IntentVisito
 		}
 	case p.addresses.LongLauncher:
 		if selector == selectorLongCreate {
-			return emitOne(baseIntent(call, ProtocolLong, IntentLaunch), nil, visit)
+			intent, err := parseLongCreate(call, call.data[4:])
+			return emitOne(intent, err, visit)
 		}
 	case p.addresses.PAIRLaunchpad:
 		if selector == selectorPAIRLaunch {
@@ -341,6 +403,40 @@ func (p *Parser) visitCallIntents(call intentCall, depth int, visit IntentVisito
 		if selector == selectorPoolsCreateToken {
 			return emitOne(baseIntent(call, ProtocolPoolsTrade, IntentLaunch), nil, visit)
 		}
+	case p.addresses.LetsCashRouter:
+		if selector == selectorLetsCashBuy {
+			intent, recognized, err := p.parseLetsCashBuy(call)
+			return emitRecognized(intent, recognized, err, visit)
+		}
+	case p.addresses.VaroRouter:
+		intent, recognized, err := p.parseVaroIntent(call, selector)
+		return emitRecognized(intent, recognized, err, visit)
+	case p.addresses.VaroLaunchpad:
+		if selector == selectorVaroSetFee {
+			intent, recognized, err := p.parseVaroFeeUpdate(call)
+			return emitRecognized(intent, recognized, err, visit)
+		}
+	case p.addresses.VirtualsRouter:
+		intent, recognized, err := p.parseVirtualsIntent(call, selector)
+		return emitRecognized(intent, recognized, err, visit)
+	case p.addresses.VirtualsLaunchpad:
+		if selector == selectorVirtualsLaunch {
+			intent, err := p.parseVirtualsLaunch(call)
+			return emitOne(intent, err, visit)
+		}
+	case p.addresses.VirtualsFactory:
+		if selector == selectorVirtualsFactorySetTax {
+			intent, err := parseVirtualsFactoryTaxUpdate(call)
+			return emitOne(intent, err, visit)
+		}
+	case p.addresses.GMGNRouter:
+		if selector == selectorGMGNSwap {
+			intent, recognized, err := p.parseGMGNIntent(call)
+			return emitRecognized(intent, recognized, err, visit)
+		}
+	case p.addresses.UniswapV2Router:
+		intent, recognized, err := p.parseFlapV2Intent(call, selector)
+		return emitRecognized(intent, recognized, err, visit)
 	}
 	if depth >= maxNestedIntentDepth {
 		return 0, nil
@@ -378,6 +474,17 @@ func (p *Parser) visitCallIntents(call intentCall, depth int, visit IntentVisito
 			return 0, err
 		}
 		return p.visitCallIntents(child, depth+1, visit)
+	case selectorExtendedTargetCall, selectorExtendedTargetCallV2:
+		child, err := targetCall(call, args)
+		if err != nil {
+			return 0, err
+		}
+		if selector == selectorExtendedTargetCall {
+			child.ponsDeployer = ponsDeployerCreator
+		} else {
+			child.ponsDeployer = ponsDeployerUnknown
+		}
+		return p.visitCallIntents(child, depth+1, visit)
 	case selectorPons7702Launch:
 		if call.transaction.Type() != gethtypes.SetCodeTxType || (depth == 0 && call.contract != call.sender) {
 			return 0, nil
@@ -407,6 +514,12 @@ func (p *Parser) visitCallIntents(call intentCall, depth int, visit IntentVisito
 			return 0, nil
 		}
 		intent, err := p.parseAtomicLaunchV2(call, args)
+		return emitOne(intent, err, visit)
+	case selectorEmbeddedPonsLaunchV1, selectorEmbeddedPonsLaunchV2:
+		if depth != 0 || call.contract != call.sender {
+			return 0, nil
+		}
+		intent, err := p.parseEmbeddedPonsLaunch(call)
 		return emitOne(intent, err, visit)
 	}
 	return 0, nil
@@ -438,12 +551,28 @@ func emitOne(intent TransactionIntent, err error, visit IntentVisitor) (int, err
 	return 1, nil
 }
 
+func emitRecognized(intent TransactionIntent, recognized bool, err error, visit IntentVisitor) (int, error) {
+	if err != nil || !recognized {
+		return 0, err
+	}
+	return emitOne(intent, nil, visit)
+}
+
+type ponsDeployerMode uint8
+
+const (
+	ponsDeployerSender ponsDeployerMode = iota
+	ponsDeployerCreator
+	ponsDeployerUnknown
+)
+
 type intentCall struct {
-	transaction *gethtypes.Transaction
-	sender      common.Address
-	contract    common.Address
-	data        []byte
-	value       *big.Int
+	transaction  *gethtypes.Transaction
+	sender       common.Address
+	contract     common.Address
+	data         []byte
+	value        *big.Int
+	ponsDeployer ponsDeployerMode
 }
 
 func baseIntent(call intentCall, protocol Protocol, kind IntentKind) TransactionIntent {
@@ -455,6 +584,199 @@ func baseIntent(call intentCall, protocol Protocol, kind IntentKind) Transaction
 		Contract:         call.contract,
 		TransactionValue: new(big.Int).Set(call.value),
 	}
+}
+
+func (p *Parser) parseVirtualsLaunch(call intentCall) (TransactionIntent, error) {
+	args := call.data[4:]
+	if len(args) != abiWordSize || requireCleanAddresses(args, 0) != nil {
+		return TransactionIntent{}, malformedCalldata("invalid Virtuals launch calldata")
+	}
+	token := readAddress(args, 0)
+	registration, ok := p.registry.LookupToken(token)
+	if !ok || registration.Protocol != ProtocolVirtuals {
+		return TransactionIntent{}, malformedCalldata("unregistered Virtuals launch token")
+	}
+	intent := baseIntent(call, ProtocolVirtuals, IntentLaunch)
+	intent.Token, intent.Quote, intent.Venue = token, registration.Quote, registration.Venue
+	return intent, nil
+}
+
+func parseVirtualsTaxUpdate(call intentCall, registration TokenRegistration) (TransactionIntent, error) {
+	args := call.data[4:]
+	if len(args) != 2*abiWordSize {
+		return TransactionIntent{}, malformedCalldata("invalid Virtuals tax update length")
+	}
+	buy, err := uintWord(args, 0, 16)
+	if err != nil || !buy.IsUint64() {
+		return TransactionIntent{}, malformedCalldata("invalid Virtuals buy tax")
+	}
+	sell, err := uintWord(args, 1, 16)
+	if err != nil || !sell.IsUint64() {
+		return TransactionIntent{}, malformedCalldata("invalid Virtuals sell tax")
+	}
+	policy := &FeePolicy{Token: registration.Token, Rate: uint32(buy.Uint64()), Denominator: 10_000, BuyFeeBPS: uint32(buy.Uint64()), SellFeeBPS: uint32(sell.Uint64())}
+	intent := baseIntent(call, ProtocolVirtuals, IntentFeePolicy)
+	intent.Token, intent.Quote, intent.Venue, intent.FeePolicy = registration.Token, registration.Quote, registration.Venue, policy
+	return intent, nil
+}
+
+func parseVirtualsFactoryTaxUpdate(call intentCall) (TransactionIntent, error) {
+	args := call.data[4:]
+	if len(args) != 5*abiWordSize || requireCleanAddresses(args, 0, 4) != nil {
+		return TransactionIntent{}, malformedCalldata("invalid Virtuals factory tax update")
+	}
+	buy, buyErr := uintWord(args, 1, 256)
+	sell, sellErr := uintWord(args, 2, 256)
+	anti, antiErr := uintWord(args, 3, 256)
+	if buyErr != nil || sellErr != nil || antiErr != nil || !buy.IsUint64() || !sell.IsUint64() || !anti.IsUint64() || buy.Uint64() > 99 || sell.Uint64() > 99 || anti.Uint64() > 99 || buy.Uint64()+anti.Uint64() > 100 {
+		return TransactionIntent{}, malformedCalldata("invalid Virtuals factory tax values")
+	}
+	intent := baseIntent(call, ProtocolVirtuals, IntentFeePolicy)
+	intent.FeePolicy = &FeePolicy{
+		BuyFeeBPS: uint32(buy.Uint64() * 100), SellFeeBPS: uint32(sell.Uint64() * 100),
+		AntiSnipeStartBPS: uint32(anti.Uint64() * 100), Denominator: 10_000,
+	}
+	return intent, nil
+}
+
+func (p *Parser) parseLetsCashBuy(call intentCall) (TransactionIntent, bool, error) {
+	const compactBytes = 20 + 6 + 20 + 16 + 2
+	args := call.data[4:]
+	if len(args) != compactBytes {
+		return TransactionIntent{}, true, malformedCalldata("invalid letscash compact buy length")
+	}
+	token := common.BytesToAddress(args[:20])
+	tickSpacing := int64(0)
+	for _, value := range args[20:26] {
+		tickSpacing = tickSpacing<<8 | int64(value)
+	}
+	hook := common.BytesToAddress(args[26:46])
+	minimumOut := new(big.Int).SetBytes(args[46:62])
+	maxFeeBPS := binary.BigEndian.Uint16(args[62:64])
+	if token == (common.Address{}) || tickSpacing <= 0 || tickSpacing > 8388607 || hook != p.addresses.LetsCashHook || minimumOut.Sign() <= 0 || maxFeeBPS == 0 || maxFeeBPS >= 10_000 || call.value == nil || call.value.Sign() <= 0 {
+		return TransactionIntent{}, true, malformedCalldata("invalid letscash compact buy")
+	}
+	registration, ok := p.registry.LookupToken(token)
+	if !ok || registration.Protocol != ProtocolLetsCash {
+		return TransactionIntent{}, false, nil
+	}
+	key := PoolKey{Currency0: common.Address{}, Currency1: token, TickSpacing: int32(tickSpacing), Hooks: hook}
+	id, err := PoolID(key)
+	if err != nil {
+		return TransactionIntent{}, true, err
+	}
+	pool, ok := p.registry.LookupPool(id)
+	if !ok || pool.Protocol != ProtocolLetsCash || pool.Token != token || pool.PoolKey != key {
+		return TransactionIntent{}, false, nil
+	}
+	intent := baseIntent(call, ProtocolLetsCash, IntentBuy)
+	intent.Recipient = call.sender
+	intent.Token, intent.Quote = token, pool.Quote
+	intent.CurrencyIn, intent.CurrencyOut = pool.Quote, token
+	intent.PoolID, intent.PoolKey = id, key
+	intent.AmountIn, intent.MinimumAmountOut = new(big.Int).Set(call.value), minimumOut
+	return intent, true, nil
+}
+
+func (p *Parser) parseVaroIntent(call intentCall, selector [4]byte) (TransactionIntent, bool, error) {
+	args := call.data[4:]
+	words := 3
+	if selector == selectorVaroSell {
+		words = 5
+	} else if selector != selectorVaroBuy {
+		return TransactionIntent{}, false, nil
+	}
+	if len(args) != words*abiWordSize || requireCleanAddresses(args, 0) != nil {
+		return TransactionIntent{}, true, malformedCalldata("invalid Varo router calldata")
+	}
+	venue := readAddress(args, 0)
+	registration, ok := p.registry.LookupVenue(venue)
+	if !ok || registration.Protocol != ProtocolVaro {
+		return TransactionIntent{}, false, nil
+	}
+	intent := baseIntent(call, ProtocolVaro, IntentBuy)
+	intent.Recipient, intent.Token, intent.Quote, intent.Venue = call.sender, registration.Token, registration.Quote, venue
+	intent.CurrencyIn, intent.CurrencyOut = registration.Quote, registration.Token
+	if selector == selectorVaroBuy {
+		intent.AmountIn, intent.MinimumAmountOut, intent.Deadline = new(big.Int).Set(call.value), readBig(args, 1), readBig(args, 2)
+	} else {
+		if call.value != nil && call.value.Sign() != 0 {
+			return TransactionIntent{}, true, malformedCalldata("Varo sell cannot carry native value")
+		}
+		if err := requireCleanAddresses(args, 1); err != nil || readAddress(args, 1) != registration.Token {
+			return TransactionIntent{}, true, malformedCalldata("invalid Varo sell token")
+		}
+		intent.Kind = IntentSell
+		intent.CurrencyIn, intent.CurrencyOut = registration.Token, registration.Quote
+		intent.AmountIn, intent.MinimumAmountOut, intent.Deadline = readBig(args, 2), readBig(args, 3), readBig(args, 4)
+	}
+	if intent.AmountIn.Sign() <= 0 || intent.MinimumAmountOut.Sign() <= 0 || intent.Deadline.Sign() <= 0 {
+		return TransactionIntent{}, true, malformedCalldata("invalid Varo router amounts")
+	}
+	return intent, true, nil
+}
+
+func (p *Parser) parseVaroFeeUpdate(call intentCall) (TransactionIntent, bool, error) {
+	args := call.data[4:]
+	if len(args) != 2*abiWordSize || requireCleanAddresses(args, 0) != nil {
+		return TransactionIntent{}, true, malformedCalldata("invalid Varo fee update calldata")
+	}
+	token := readAddress(args, 0)
+	registration, ok := p.registry.LookupToken(token)
+	if !ok || registration.Protocol != ProtocolVaro {
+		return TransactionIntent{}, false, nil
+	}
+	fee, err := uintWord(args, 1, 16)
+	if err != nil || !fee.IsUint64() || fee.Uint64() > 3_000 {
+		return TransactionIntent{}, true, malformedCalldata("invalid Varo protocol fee")
+	}
+	feeBPS := uint32(fee.Uint64())
+	intent := baseIntent(call, ProtocolVaro, IntentFeePolicy)
+	intent.Token, intent.Quote, intent.Venue = token, registration.Quote, registration.Venue
+	intent.FeePolicy = &FeePolicy{Token: token, Rate: feeBPS, Denominator: 10_000, BuyFeeBPS: feeBPS, SellFeeBPS: feeBPS}
+	return intent, true, nil
+}
+
+func (p *Parser) parseVirtualsIntent(call intentCall, selector [4]byte) (TransactionIntent, bool, error) {
+	args := call.data[4:]
+	if selector != selectorVirtualsBuy && selector != selectorVirtualsSell {
+		return TransactionIntent{}, false, nil
+	}
+	if len(args) != 5*abiWordSize || requireCleanAddresses(args, 0) != nil {
+		return TransactionIntent{}, true, malformedCalldata("invalid Virtuals router calldata")
+	}
+	token := readAddress(args, 0)
+	registration, ok := p.registry.LookupToken(token)
+	if !ok || registration.Protocol != ProtocolVirtuals {
+		return TransactionIntent{}, false, nil
+	}
+	intent := baseIntent(call, ProtocolVirtuals, IntentBuy)
+	intent.Recipient, intent.Token, intent.Quote, intent.Venue = call.sender, token, registration.Quote, registration.Venue
+	intent.CurrencyIn, intent.CurrencyOut = registration.Quote, token
+	if selector == selectorVirtualsSell {
+		if call.value != nil && call.value.Sign() != 0 {
+			return TransactionIntent{}, true, malformedCalldata("Virtuals sell cannot carry native value")
+		}
+		intent.Kind = IntentSell
+		intent.CurrencyIn, intent.CurrencyOut = token, registration.Quote
+		intent.AmountIn = readBig(args, 1)
+		intent.MinimumIntermediateAmountOut = readBig(args, 2)
+		intent.MinimumAmountOut = readBig(args, 3)
+		intent.Deadline = readBig(args, 4)
+	} else {
+		intent.MinimumIntermediateAmountOut, intent.MinimumAmountOut = readBig(args, 1), readBig(args, 2)
+		intent.AmountIn = new(big.Int).Set(call.value)
+		intent.Deadline = readBig(args, 3)
+		maxFee := readBig(args, 4)
+		if !maxFee.IsUint64() || maxFee.Sign() <= 0 || maxFee.Uint64() >= 10_000 {
+			return TransactionIntent{}, true, malformedCalldata("invalid Virtuals maximum fee")
+		}
+		intent.MaximumFeeBPS = uint32(maxFee.Uint64())
+	}
+	if call.value == nil || intent.AmountIn.Sign() <= 0 || intent.MinimumIntermediateAmountOut.Sign() <= 0 || intent.MinimumAmountOut.Sign() <= 0 || intent.Deadline.Sign() <= 0 {
+		return TransactionIntent{}, true, malformedCalldata("invalid Virtuals router amounts")
+	}
+	return intent, true, nil
 }
 
 func parseCurveIntent(registration CurveRegistration, call intentCall, selector [4]byte, args []byte) (TransactionIntent, bool, error) {
@@ -723,6 +1045,12 @@ func parsePonsLaunchAndBuy(call intentCall, args []byte) (TransactionIntent, err
 	if err != nil {
 		return TransactionIntent{}, err
 	}
+	switch call.ponsDeployer {
+	case ponsDeployerCreator:
+		launch.OriginalDeployer = launch.Params.CreatorFeeRecipient
+	case ponsDeployerUnknown:
+		launch.OriginalDeployer = common.Address{}
+	}
 	intent.PonsLaunch = launch
 	intent.Quote = readAddress(args, 2)
 	intent.CurrencyIn = intent.Quote
@@ -750,6 +1078,12 @@ func parsePonsLaunch(call intentCall, args []byte, hasExemptions bool) (Transact
 	launch, err := decodePonsLaunchIntent(args, 0, 1, 2, exemptionsWord, call.sender)
 	if err != nil {
 		return TransactionIntent{}, err
+	}
+	switch call.ponsDeployer {
+	case ponsDeployerCreator:
+		launch.OriginalDeployer = launch.Params.CreatorFeeRecipient
+	case ponsDeployerUnknown:
+		launch.OriginalDeployer = common.Address{}
 	}
 	intent := baseIntent(call, ProtocolPonsV2, IntentLaunch)
 	intent.Recipient = call.sender
@@ -913,6 +1247,56 @@ func parseO1LaunchAndBuy(call intentCall, args []byte) (TransactionIntent, error
 	return intent, nil
 }
 
+func parseO1Launch(call intentCall, args []byte) (TransactionIntent, error) {
+	if err := requireWords(args, 1); err != nil {
+		return TransactionIntent{}, err
+	}
+	launchOffset, err := readOffset(args, 0)
+	if err != nil || launchOffset != abiWordSize {
+		return TransactionIntent{}, malformedCalldata("invalid o1 launch tuple offset")
+	}
+	launch, err := subslice(args, launchOffset, 8*abiWordSize)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	if err := requireCleanAddresses(launch, 4); err != nil {
+		return TransactionIntent{}, err
+	}
+	intent := baseIntent(call, ProtocolO1, IntentLaunch)
+	intent.Recipient = call.sender
+	intent.Quote = readAddress(launch, 4)
+	return intent, nil
+}
+
+func parseO1FeePolicy(call intentCall, args []byte) (TransactionIntent, error) {
+	if err := requireWords(args, 1); err != nil {
+		return TransactionIntent{}, err
+	}
+	offset, err := readOffset(args, 0)
+	if err != nil || offset != abiWordSize {
+		return TransactionIntent{}, malformedCalldata("invalid o1 fee configuration tuple offset")
+	}
+	configuration, err := subslice(args, offset, 4*abiWordSize)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	base, err := readUint32(configuration, 0)
+	if err != nil || base > 1_000 {
+		return TransactionIntent{}, malformedCalldata("invalid o1 base fee")
+	}
+	start, err := readUint32(configuration, 1)
+	if err != nil || start < base || start > 9_900 {
+		return TransactionIntent{}, malformedCalldata("invalid o1 anti-snipe start fee")
+	}
+	window, err := readUint32(configuration, 2)
+	if err != nil || window == 0 {
+		return TransactionIntent{}, malformedCalldata("invalid o1 anti-snipe window")
+	}
+	intent := baseIntent(call, ProtocolO1, IntentFeePolicy)
+	intent.FeePolicy = &FeePolicy{BaseFeeBPS: base, AntiSnipeStartTotalBPS: start, AntiSnipeWindowSeconds: window}
+	return intent, nil
+}
+
 func parsePAIRLaunch(call intentCall, args []byte) (TransactionIntent, error) {
 	if err := requireWords(args, 1); err != nil {
 		return TransactionIntent{}, err
@@ -966,6 +1350,73 @@ func parsePAIRLaunch(call intentCall, args []byte) (TransactionIntent, error) {
 	return intent, nil
 }
 
+func parseLongCreate(call intentCall, args []byte) (TransactionIntent, error) {
+	if err := requireWords(args, 1); err != nil {
+		return TransactionIntent{}, err
+	}
+	tupleOffset, err := readOffset(args, 0)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	if tupleOffset != abiWordSize {
+		return TransactionIntent{}, malformedCalldata("invalid Long create tuple offset")
+	}
+	tuple, err := subslice(args, tupleOffset, len(args)-tupleOffset)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	const headWords = 13
+	if err := requireWords(tuple, headWords); err != nil {
+		return TransactionIntent{}, err
+	}
+	if err := requireCleanAddresses(tuple, 2, 3, 5, 7, 9, 11); err != nil {
+		return TransactionIntent{}, err
+	}
+	readData := func(word int) ([]byte, error) {
+		offset, offsetErr := readOffset(tuple, word)
+		if offsetErr != nil || offset < headWords*abiWordSize {
+			return nil, malformedCalldata("invalid Long create data offset")
+		}
+		return readDynamicBytes(tuple, offset)
+	}
+	tokenFactoryData, err := readData(4)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	governanceFactoryData, err := readData(6)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	poolInitializerData, err := readData(8)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	liquidityMigratorData, err := readData(10)
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+
+	long := &LongLaunchIntent{
+		InitialSupply:         readBig(tuple, 0),
+		NumTokensToSell:       readBig(tuple, 1),
+		Numeraire:             readAddress(tuple, 2),
+		TokenFactory:          readAddress(tuple, 3),
+		TokenFactoryData:      tokenFactoryData,
+		GovernanceFactory:     readAddress(tuple, 5),
+		GovernanceFactoryData: governanceFactoryData,
+		PoolInitializer:       readAddress(tuple, 7),
+		PoolInitializerData:   poolInitializerData,
+		LiquidityMigrator:     readAddress(tuple, 9),
+		LiquidityMigratorData: liquidityMigratorData,
+		Integrator:            readAddress(tuple, 11),
+		Salt:                  common.BytesToHash(tuple[12*abiWordSize : 13*abiWordSize]),
+	}
+	intent := baseIntent(call, ProtocolLong, IntentLaunch)
+	intent.Quote = long.Numeraire
+	intent.LongLaunch = long
+	return intent, nil
+}
+
 func executeModeCalls(args []byte) (dynamicCallArray, error) {
 	if err := requireWords(args, 2); err != nil {
 		return dynamicCallArray{}, err
@@ -1014,7 +1465,43 @@ func (p *Parser) parseAtomicLaunchV2(call intentCall, args []byte) (TransactionI
 	intent := baseIntent(semanticCall, ProtocolPonsV2, IntentLaunch)
 	intent.Recipient = call.sender
 	intent.Quote = readAddress(tuple, 2)
+	launch, err := decodePonsLaunchIntent(tuple, 0, 1, 2, -1, common.Address{})
+	if err != nil {
+		return TransactionIntent{}, err
+	}
+	intent.PonsLaunch = launch
 	return intent, nil
+}
+
+func (p *Parser) parseEmbeddedPonsLaunch(call intentCall) (TransactionIntent, error) {
+	var result TransactionIntent
+	found := false
+	for offset := 4; offset+4 <= len(call.data); offset += abiWordSize {
+		if [4]byte(call.data[offset:offset+4]) != selectorPonsLaunchAndBuy {
+			continue
+		}
+		child := call
+		child.contract = p.addresses.PonsLaunchAndBuy
+		child.data = call.data[offset:]
+		child.value = new(big.Int)
+		child.ponsDeployer = ponsDeployerUnknown
+		intent, err := parsePonsLaunchAndBuy(child, child.data[4:])
+		if err != nil {
+			continue
+		}
+		if found {
+			return TransactionIntent{}, malformedCalldata("multiple embedded Pons launch payloads")
+		}
+		intent.Kind = IntentLaunch
+		intent.CurrencyIn = common.Address{}
+		intent.AmountIn = nil
+		intent.MinimumAmountOut = nil
+		result, found = intent, true
+	}
+	if !found {
+		return TransactionIntent{}, malformedCalldata("embedded Pons launch payload is missing")
+	}
+	return result, nil
 }
 
 type dynamicCallArray struct {
@@ -1082,11 +1569,12 @@ func (a dynamicCallArray) at(parent intentCall, index int) (intentCall, error) {
 		return intentCall{}, err
 	}
 	return intentCall{
-		transaction: parent.transaction,
-		sender:      parent.sender,
-		contract:    contract,
-		data:        data,
-		value:       readBig(tuple, a.valueWord),
+		transaction:  parent.transaction,
+		sender:       parent.sender,
+		contract:     contract,
+		data:         data,
+		value:        readBig(tuple, a.valueWord),
+		ponsDeployer: parent.ponsDeployer,
 	}, nil
 }
 
@@ -1165,7 +1653,10 @@ func targetCall(parent intentCall, args []byte) (intentCall, error) {
 	if err != nil {
 		return intentCall{}, err
 	}
-	return intentCall{transaction: parent.transaction, sender: parent.sender, contract: contract, data: data, value: readBig(args, 2)}, nil
+	return intentCall{
+		transaction: parent.transaction, sender: parent.sender, contract: contract, data: data, value: readBig(args, 2),
+		ponsDeployer: parent.ponsDeployer,
+	}, nil
 }
 
 func pons7702CallData(args []byte) ([]byte, error) {
@@ -1184,7 +1675,10 @@ func (p *Parser) pons7702Call(parent intentCall, args []byte) (intentCall, error
 	if err != nil {
 		return intentCall{}, err
 	}
-	return intentCall{transaction: parent.transaction, sender: parent.sender, contract: p.addresses.PonsLaunchAndBuy, data: data, value: readBig(args, 4)}, nil
+	return intentCall{
+		transaction: parent.transaction, sender: parent.sender, contract: p.addresses.PonsLaunchAndBuy, data: data, value: readBig(args, 4),
+		ponsDeployer: parent.ponsDeployer,
+	}, nil
 }
 
 type dynamicBytesArray struct {
@@ -1347,6 +1841,14 @@ func readUint24(data []byte, word int) (uint32, error) {
 		return 0, malformedCalldata("invalid uint24")
 	}
 	return uint32(value[29])<<16 | uint32(value[30])<<8 | uint32(value[31]), nil
+}
+
+func readUint32(data []byte, word int) (uint32, error) {
+	value := readBig(data, word)
+	if value == nil || !value.IsUint64() || value.Uint64() > uint64(^uint32(0)) {
+		return 0, malformedCalldata("invalid uint32")
+	}
+	return uint32(value.Uint64()), nil
 }
 
 func readInt24(data []byte, word int) (int32, error) {

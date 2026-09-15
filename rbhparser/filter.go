@@ -21,7 +21,7 @@ func Protocols(protocols ...Protocol) ProtocolSet {
 func IntentKinds(kinds ...IntentKind) IntentKindSet {
 	var set IntentKindSet
 	for _, kind := range kinds {
-		if kind > IntentUnknown && kind <= IntentLaunchAndBuy {
+		if kind > IntentUnknown && kind <= IntentFeePolicy {
 			set |= 1 << kind
 		}
 	}
@@ -31,7 +31,7 @@ func IntentKinds(kinds ...IntentKind) IntentKindSet {
 func EventKinds(kinds ...EventKind) EventKindSet {
 	var set EventKindSet
 	for _, kind := range kinds {
-		if kind > EventUnknown && kind <= EventCurveSell {
+		if kind > EventUnknown && kind <= EventVenueState {
 			set |= 1 << kind
 		}
 	}
@@ -120,7 +120,7 @@ func (f IntentFilter) Match(intent TransactionIntent) bool {
 }
 
 func (f IntentFilter) matchClassification(protocol Protocol, kind IntentKind) bool {
-	if !protocol.Valid() || kind <= IntentUnknown || kind > IntentLaunchAndBuy {
+	if !protocol.Valid() || kind <= IntentUnknown || kind > IntentFeePolicy {
 		return false
 	}
 	protocolBit := ProtocolSet(1) << protocol
@@ -138,7 +138,7 @@ func (f IntentFilter) matchClassification(protocol Protocol, kind IntentKind) bo
 }
 
 func (f IntentFilter) mayMatchV4() bool {
-	for protocol := ProtocolPonsV2; protocol <= ProtocolBagsV2; protocol++ {
+	for protocol := ProtocolPonsV2; protocol <= ProtocolVirtuals; protocol++ {
 		if f.matchClassification(protocol, IntentBuy) || f.matchClassification(protocol, IntentSell) {
 			return true
 		}
@@ -188,7 +188,7 @@ func (f EventFilter) Match(event Event) bool {
 }
 
 func (f EventFilter) matchClassification(protocol Protocol, kind EventKind) bool {
-	if kind <= EventUnknown || kind > EventCurveSell || (protocol != ProtocolUnknown && !protocol.Valid()) {
+	if kind <= EventUnknown || kind > EventVenueState || (protocol != ProtocolUnknown && !protocol.Valid()) {
 		return false
 	}
 	kindBit := EventKindSet(1) << kind

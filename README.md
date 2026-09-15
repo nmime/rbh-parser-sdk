@@ -4,7 +4,7 @@
 </div>
 
 <p align="center">
-  <strong>Typed parsing for Pons V2, Long, o1, Pools.trade, PAIR, Bags V2, and Uniswap v4.</strong>
+  <strong>Typed parsing for Pons V2, Long, o1, Pools.trade, PAIR, Bags V2, letscash.fun, Flap, Varo, Virtuals, and Uniswap v4.</strong>
 </p>
 
 <p align="center">
@@ -21,9 +21,9 @@
   <a href="https://discord.gg/vuazbGkqQE">Discord</a>
 </p>
 
-The SDK is transport agnostic. It parses values supplied by the application and
-does not include official Feed, BlockRazor, WebSocket, RPC subscription, or
-network client implementations.
+The `rbhparser` package parses application-supplied data without hidden RPC calls.
+Optional `feed/sequencer` and `feed/blockrazor` packages provide official signed
+Sequencer Feed and regional BlockRazor Direct Feed clients for low-latency intents.
 
 ## SDKs
 
@@ -42,6 +42,14 @@ network client implementations.
 | Pools.trade | Yes | No | Yes | Yes |
 | PAIR | Yes | No | Yes | Yes |
 | Bags V2 | Yes | Yes | Yes | Yes |
+| letscash.fun | Yes | No | Yes | Yes |
+| Flap Tax / Stocks | Yes | No | No | Yes |
+| Varo | Yes | No | No | Yes |
+| Virtuals | Yes | No | No | Yes |
+
+Flap also registers graduated V2 pairs and tracks `Sync` reserves; Varo
+registers v3 pools, while Virtuals tracks its bonding venue and external
+liquidity. `SupportedProtocols()` distinguishes these capabilities individually.
 
 Use `SupportedProtocols()` for machine-readable capabilities and
 `ParseProtocol()` for configuration values.
@@ -62,6 +70,12 @@ Use `SupportedProtocols()` for machine-readable capabilities and
 - Applies receipt registry updates transactionally: a malformed receipt cannot
   partially mutate parser state.
 - Supports snapshot and restore of known curve and pool registrations.
+- Tracks fee-policy updates and graduated venue registrations without treating
+  `ModifyLiquidity` as fee evidence.
+- Supports overlay registries for speculative Feed discovery without mutating
+  finalized state.
+- Verifies official Feed signatures, sequence continuity, gaps, and reorgs in
+  the optional `feed/sequencer` package; Feed intents are not receipt fills.
 - Registers an exact canonical Bags hook/WETH/dynamic-fee/tick-spacing
   `Initialize` without requiring an earlier observed `TokenCreated`; the hook
   only permits its registered bonding curve to initialize the pool.
@@ -70,8 +84,10 @@ Use `SupportedProtocols()` for machine-readable capabilities and
 ## Installation
 
 ```bash
-go get github.com/0xfnzero/rbh-parser-sdk@v0.3.0
+go get github.com/0xfnzero/rbh-parser-sdk@v0.4.0
 ```
+
+`v0.4.0` contains the expanded protocol and Feed support; earlier tags do not.
 
 ## Parse a receipt
 
@@ -142,6 +158,30 @@ if parser.IsPotentialIntent(tx) {
 before full ABI decoding. Transaction intents describe submitted calldata, not
 confirmed execution or fill amounts.
 
+For low-latency input, use the optional signed Feed client with the same parser:
+
+```go
+feed, err := sequencer.New(sequencer.Config{
+    Filter: func(tx *gethtypes.Transaction) bool {
+        return parser.IsPotentialIntentWithFilter(tx, intentFilter)
+    },
+    OnSequence: func(_ context.Context, sequence uint64) error {
+        return persistSequence(sequence)
+    },
+})
+if err != nil { return err }
+err = feed.Run(ctx, func(_ context.Context, item sequencer.FeedTransaction) error {
+    _, err := parser.VisitTransactionIntentsFiltered(
+        item.Transaction, item.Sender, intentFilter, handleIntent,
+    )
+    return err
+})
+```
+
+See [`examples/direct_feed`](./examples/direct_feed). Persist Feed sequence
+numbers, not EVM block numbers; confirm outcomes from receipts. Feed signatures
+are verified before filtering. The hot path needs no receipt or RPC lookup.
+
 ## Filters
 
 ```go
@@ -183,10 +223,9 @@ go test -race ./...
 go vet ./...
 ```
 
-Live deployment and receipt verification is opt-in. It checks runtime code for
-all six protocols and parses fixed mainnet launch receipts for Pons V2, Long,
-o1, Pools.trade, and PAIR. Bags V2 launch decoding is covered offline because
-the current mainnet factory has not emitted its first launch event yet.
+Live deployment and receipt verification is opt-in. Offline tests cover the
+expanded protocol set; live tests depend on the availability of representative
+mainnet transactions and deployments.
 
 ```bash
 ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com go test ./rbhparser -run TestRobinhood -count=1 -v

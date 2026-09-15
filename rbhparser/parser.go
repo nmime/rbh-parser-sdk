@@ -13,6 +13,10 @@ type Parser struct {
 	registry  *Registry
 }
 
+// LogErrorHandler may accept a single malformed receipt log so parsing can
+// continue. Callers should only accept errors for events they can safely drop.
+type LogErrorHandler func(log gethtypes.Log, err error) bool
+
 func New() *Parser {
 	return NewWithRegistry(DefaultAddressBook(), NewRegistry())
 }
@@ -43,6 +47,17 @@ func (p *Parser) ParseLog(log gethtypes.Log) (Event, bool, error) {
 		return Event{}, false, nil
 	}
 	topic := log.Topics[0]
+	if topic == topicProtocolUpgraded {
+		protocol, known := p.upgradeProtocol(log.Address)
+		if !known || len(log.Topics) != 2 || len(log.Data) != 0 {
+			return Event{}, false, nil
+		}
+		implementation, err := topicAddress(log.Topics[1])
+		if err != nil || implementation == (common.Address{}) {
+			return Event{}, false, malformed("protocol upgrade", ErrMalformedLog)
+		}
+		return Event{Kind: EventProtocolUpgrade, Protocol: protocol, Data: ProtocolUpgrade{Proxy: log.Address, Implementation: implementation}, Log: log}, true, nil
+	}
 	if log.Address == p.addresses.PoolManager {
 		switch topic {
 		case topicPoolInitialize:
@@ -67,6 +82,11 @@ func (p *Parser) ParseLog(log gethtypes.Log) (Event, bool, error) {
 					return Event{}, false, registrationErr
 				}
 				protocol = ProtocolBagsV2
+			} else if registration, ok := canonicalPonsUSDGPoolRegistration(initialized, p.addresses); ok {
+				if registrationErr := p.registry.RegisterPool(registration); registrationErr != nil {
+					return Event{}, false, registrationErr
+				}
+				protocol = ProtocolPonsV2
 			}
 			return Event{Kind: EventPoolInitialized, Protocol: protocol, Data: initialized, Log: log}, true, nil
 		case topicPoolSwap:
@@ -111,6 +131,13 @@ func (p *Parser) ParseLog(log gethtypes.Log) (Event, bool, error) {
 		launch, err := decodeO1Launch(log)
 		return p.launchEvent(log, ProtocolO1, launch, err)
 	}
+	if log.Address == p.addresses.O1Factory && topic == topicO1FeeConfig {
+		policy, err := decodeO1FeePolicy(log)
+		if err != nil {
+			return Event{}, false, malformed("o1 fee configuration", err)
+		}
+		return Event{Kind: EventFeePolicy, Protocol: ProtocolO1, Data: policy, Log: log}, true, nil
+	}
 	if log.Address == p.addresses.PoolsEntry && topic == topicPoolsCreated {
 		launch, err := decodePoolsLaunch(log)
 		return p.launchEvent(log, ProtocolPoolsTrade, launch, err)
@@ -122,6 +149,226 @@ func (p *Parser) ParseLog(log gethtypes.Log) (Event, bool, error) {
 	if log.Address == p.addresses.BagsFactory && topic == topicBagsCreated {
 		launch, err := decodeBagsLaunch(log, p.addresses.WETH)
 		return p.launchEvent(log, ProtocolBagsV2, launch, err)
+	}
+	if log.Address == p.addresses.LetsCashFactory && topic == topicLetsCashLaunch {
+		launch, err := decodeLetsCashLaunch(log)
+		return p.launchEvent(log, ProtocolLetsCash, launch, err)
+	}
+	if log.Address == p.addresses.LetsCashHook && topic == topicLetsCashFee {
+		policy, err := decodeLetsCashFeePolicy(log)
+		if err != nil {
+			return Event{}, false, malformed("letscash fee policy", err)
+		}
+		return Event{Kind: EventFeePolicy, Protocol: ProtocolLetsCash, Data: policy, Log: log}, true, nil
+	}
+	if log.Address == p.addresses.FlapController && (topic == topicFlapTax || topic == topicFlapAsymmetricTax) {
+		token, err := addressWord(log.Data, 0)
+		if err != nil {
+			return Event{}, false, malformed("Flap fee policy", err)
+		}
+		protocol := ProtocolUnknown
+		if registration, ok := p.registry.LookupToken(token); ok {
+			protocol = registration.Protocol
+		}
+		if protocol == ProtocolUnknown {
+			protocol = ProtocolFlapTax
+		}
+		policy, err := decodeFlapTaxPolicy(log, topic == topicFlapAsymmetricTax)
+		if err != nil {
+			return Event{}, false, malformed("Flap fee policy", err)
+		}
+		return Event{Kind: EventFeePolicy, Protocol: protocol, Data: policy, Log: log}, true, nil
+	}
+	if log.Address == p.addresses.FlapController && topic == topicFlapSupply {
+		token, supply, err := decodeFlapTokenAndUint(log, 256)
+		if err != nil {
+			return Event{}, false, malformed("Flap circulating supply", err)
+		}
+		registration, ok := p.registry.LookupToken(token)
+		if !ok || (registration.Protocol != ProtocolFlapTax && registration.Protocol != ProtocolFlapStocks) {
+			return Event{}, false, nil
+		}
+		return Event{Kind: EventFlapSupply, Protocol: registration.Protocol, Data: FlapSupply{Token: token, CirculatingSupply: supply}, Log: log}, true, nil
+	}
+	if log.Address == p.addresses.FlapController && topic == topicFlapGraduated {
+		graduation, err := decodeFlapGraduation(log)
+		if err != nil {
+			return Event{}, false, malformed("Flap graduation", err)
+		}
+		registration, ok := p.registry.LookupToken(graduation.Token)
+		if !ok || (registration.Protocol != ProtocolFlapTax && registration.Protocol != ProtocolFlapStocks) {
+			return Event{}, false, nil
+		}
+		if err := p.registry.RegisterVenue(TokenRegistration{Token: registration.Token, Protocol: registration.Protocol, Quote: registration.Quote, Venue: graduation.Venue}); err != nil {
+			return Event{}, false, err
+		}
+		return Event{Kind: EventGraduation, Protocol: registration.Protocol, Data: graduation, Log: log}, true, nil
+	}
+	if topic == topicFlapPoolState {
+		registration, ok := p.registry.LookupToken(log.Address)
+		if !ok || registration.Protocol != ProtocolFlapTax {
+			return Event{}, false, nil
+		}
+		if err := validateLog(log, 1, 64); err != nil {
+			return Event{}, false, malformed("Flap pool state", err)
+		}
+		state, err := uintWord(log.Data, 1, 8)
+		if err != nil || !state.IsUint64() || state.Uint64() != uint64(flapTaxFreeState) {
+			return Event{}, false, nil
+		}
+		policy := FeePolicy{Token: log.Address, Denominator: 10_000}
+		return Event{Kind: EventFeePolicy, Protocol: ProtocolFlapTax, Data: policy, Log: log}, true, nil
+	}
+	if log.Address == p.addresses.VaroLaunchpad && topic == topicVaroLaunch {
+		launch, err := decodeVaroLaunch(log)
+		return p.launchEvent(log, ProtocolVaro, launch, err)
+	}
+	if log.Address == p.addresses.VaroLaunchpad && topic == topicVaroFee {
+		if len(log.Topics) != 3 {
+			return Event{}, false, malformed("Varo fee policy", ErrMalformedLog)
+		}
+		token, err := topicAddress(log.Topics[1])
+		if err != nil {
+			return Event{}, false, malformed("Varo fee policy", err)
+		}
+		registration, ok := p.registry.LookupToken(token)
+		if !ok || registration.Protocol != ProtocolVaro {
+			return Event{}, false, nil
+		}
+		policy, err := decodeVaroFeePolicy(log, registration)
+		if err != nil {
+			return Event{}, false, malformed("Varo fee policy", err)
+		}
+		return Event{Kind: EventFeePolicy, Protocol: ProtocolVaro, Data: policy, Log: log}, true, nil
+	}
+	if log.Address == p.addresses.VirtualsLaunchpad && (topic == topicVirtualsPreLaunch || topic == topicVirtualsLaunched) {
+		launch, err := decodeVirtualsLaunch(log, p.addresses.VirtualToken, topic == topicVirtualsLaunched)
+		return p.launchEvent(log, ProtocolVirtuals, launch, err)
+	}
+	if log.Address == p.addresses.VirtualsFactory && topic == topicVirtualsPairMade {
+		if len(log.Topics) != 3 || len(log.Data) != 64 {
+			return Event{}, false, malformed("Virtuals pair creation", ErrMalformedLog)
+		}
+		token, err := topicAddress(log.Topics[1])
+		if err != nil || token == (common.Address{}) {
+			return Event{}, false, malformed("Virtuals pair creation", ErrMalformedLog)
+		}
+		quote, err := topicAddress(log.Topics[2])
+		if err != nil || quote != p.addresses.VirtualToken {
+			return Event{}, false, malformed("Virtuals pair creation", ErrMalformedLog)
+		}
+		venue, err := addressWord(log.Data, 0)
+		if err != nil || venue == (common.Address{}) || venue == token || venue == quote {
+			return Event{}, false, malformed("Virtuals pair creation", ErrMalformedLog)
+		}
+		if err := p.registry.RegisterToken(TokenRegistration{Token: token, Protocol: ProtocolVirtuals, Quote: quote, Venue: venue}); err != nil {
+			return Event{}, false, err
+		}
+		return Event{}, false, nil
+	}
+	if log.Address == p.addresses.VirtualsLaunchpad && topic == topicVirtualsGraduated {
+		if len(log.Topics) != 2 || len(log.Data) != 32 {
+			return Event{}, false, malformed("Virtuals graduation", ErrMalformedLog)
+		}
+		token, err := topicAddress(log.Topics[1])
+		if err != nil {
+			return Event{}, false, malformed("Virtuals graduation", err)
+		}
+		agentToken, err := addressWord(log.Data, 0)
+		if err != nil || agentToken == (common.Address{}) {
+			return Event{}, false, malformed("Virtuals graduation", ErrMalformedLog)
+		}
+		return Event{Kind: EventGraduation, Protocol: ProtocolVirtuals, Data: Graduation{Token: token, AgentToken: agentToken}, Log: log}, true, nil
+	}
+	if topic == topicVirtualsTax {
+		registration, ok := p.registry.LookupToken(log.Address)
+		if !ok || registration.Protocol != ProtocolVirtuals {
+			return Event{}, false, nil
+		}
+		policy, err := decodeVirtualsFeePolicy(log)
+		if err != nil {
+			return Event{}, false, malformed("Virtuals fee policy", err)
+		}
+		return Event{Kind: EventFeePolicy, Protocol: ProtocolVirtuals, Data: policy, Log: log}, true, nil
+	}
+	if log.Address == p.addresses.WETHVirtualPair && topic == topicV2PairSync {
+		state, err := decodeVirtualsAbsoluteState(log, 112)
+		if err != nil {
+			return Event{}, false, malformed("Virtuals WETH/VIRTUAL Sync", err)
+		}
+		return Event{Kind: EventVenueState, Protocol: ProtocolVirtuals, Data: state, Log: log}, true, nil
+	}
+	if registration, ok := p.registry.LookupVenue(log.Address); ok && registration.Protocol == ProtocolVirtuals {
+		var state VenueStateChange
+		var err error
+		switch topic {
+		case topicVirtualsPairMint, topicVirtualsPairSync:
+			state, err = decodeVirtualsAbsoluteState(log, 256)
+		default:
+			break
+		}
+		if topic == topicVirtualsPairMint || topic == topicVirtualsPairSync {
+			if err != nil {
+				return Event{}, false, malformed("Virtuals pair state", err)
+			}
+			return Event{Kind: EventVenueState, Protocol: ProtocolVirtuals, Data: state, Log: log}, true, nil
+		}
+	}
+	if registration, ok := p.registry.LookupVenue(log.Address); ok && (registration.Protocol == ProtocolFlapTax || registration.Protocol == ProtocolFlapStocks) {
+		switch topic {
+		case topicV2PairSync:
+			state, err := decodeVirtualsAbsoluteState(log, 112)
+			if err != nil {
+				return Event{}, false, malformed("Flap V2 pair state", err)
+			}
+			state.Token = registration.Token
+			return Event{Kind: EventVenueState, Protocol: registration.Protocol, Data: state, Log: log}, true, nil
+		case topicVirtualsPairSwap:
+			swap, err := decodeFlapV2Swap(log, registration, p.addresses.WETH)
+			if err != nil {
+				return Event{}, false, malformed("Flap V2 swap", err)
+			}
+			return Event{Kind: EventVenueSwap, Protocol: registration.Protocol, Data: swap, Log: log}, true, nil
+		}
+	}
+	if log.Address == p.addresses.VaroRouter && topic == topicVaroBuy {
+		if len(log.Topics) < 3 {
+			return Event{}, false, malformed("Varo buy", ErrMalformedLog)
+		}
+		token, err := topicAddress(log.Topics[2])
+		if err != nil {
+			return Event{}, false, malformed("Varo buy", err)
+		}
+		registration, ok := p.registry.LookupToken(token)
+		if !ok || registration.Protocol != ProtocolVaro {
+			return Event{}, false, nil
+		}
+		swap, err := decodeVaroBuy(log, registration)
+		if err != nil {
+			return Event{}, false, malformed("Varo buy", err)
+		}
+		return Event{Kind: EventVenueSwap, Protocol: ProtocolVaro, Data: swap, Log: log}, true, nil
+	}
+	if log.Address == p.addresses.GMGNRouter && topic == topicGMGNSwap {
+		swap, protocol, ok, err := p.decodeGMGNSwap(log)
+		if err != nil {
+			return Event{}, false, malformed("GMGN swap", err)
+		}
+		if !ok {
+			return Event{}, false, nil
+		}
+		return Event{Kind: EventVenueSwap, Protocol: protocol, Data: swap, Log: log}, true, nil
+	}
+	if topic == topicVirtualsBuy {
+		registration, ok := p.registry.LookupVenue(log.Address)
+		if !ok || registration.Protocol != ProtocolVirtuals {
+			return Event{}, false, nil
+		}
+		swap, err := decodeVirtualsBuy(log, registration)
+		if err != nil {
+			return Event{}, false, malformed("Virtuals buy", err)
+		}
+		return Event{Kind: EventVenueSwap, Protocol: ProtocolVirtuals, Data: swap, Log: log}, true, nil
 	}
 
 	if topic == topicPonsCurveBuy || topic == topicPonsCurveSell || topic == topicBagsCurveBuy || topic == topicBagsCurveSell {
@@ -175,6 +422,33 @@ func canonicalBagsPoolRegistration(initialized PoolInitialized, addresses Addres
 	}, true
 }
 
+// canonicalPonsUSDGPoolRegistration recognizes graduated Pons meme pools that
+// pair a meme token with USDG under the canonical Pons meme hook. This lets
+// live Initialize logs register the pool without a same-receipt Launch event,
+// which is required for catch-knife dump detection on already-traded pools.
+func canonicalPonsUSDGPoolRegistration(initialized PoolInitialized, addresses AddressBook) (PoolRegistration, bool) {
+	key := initialized.PoolKey
+	if initialized.PoolID == (common.Hash{}) || key.Hooks != addresses.PonsMemeHook || key.TickSpacing == 0 || addresses.USDG == (common.Address{}) {
+		return PoolRegistration{}, false
+	}
+	var token common.Address
+	switch {
+	case key.Currency0 == addresses.USDG:
+		token = key.Currency1
+	case key.Currency1 == addresses.USDG:
+		token = key.Currency0
+	default:
+		return PoolRegistration{}, false
+	}
+	if token == (common.Address{}) || token == addresses.USDG || token == addresses.WETH {
+		return PoolRegistration{}, false
+	}
+	return PoolRegistration{
+		PoolID: initialized.PoolID, Protocol: ProtocolPonsV2,
+		Token: token, Quote: addresses.USDG, PoolKey: key,
+	}, true
+}
+
 // IsCanonicalBagsV4Pool reports whether a PoolKey can only be initialized by
 // a bonding curve registered in the canonical Bags hook.
 func IsCanonicalBagsV4Pool(key PoolKey) bool {
@@ -183,6 +457,17 @@ func IsCanonicalBagsV4Pool(key PoolKey) bool {
 		return false
 	}
 	_, ok := canonicalBagsPoolRegistration(PoolInitialized{PoolID: id, PoolKey: key}, DefaultAddressBook())
+	return ok
+}
+
+// IsCanonicalPonsUSDGPool reports whether a PoolKey is a graduated Pons USDG
+// meme pool under the canonical Pons meme hook.
+func IsCanonicalPonsUSDGPool(key PoolKey) bool {
+	id, err := PoolID(key)
+	if err != nil {
+		return false
+	}
+	_, ok := canonicalPonsUSDGPoolRegistration(PoolInitialized{PoolID: id, PoolKey: key}, DefaultAddressBook())
 	return ok
 }
 
@@ -229,6 +514,9 @@ func (p *Parser) launchEvent(log gethtypes.Log, protocol Protocol, launch Launch
 		return Event{}, false, fmt.Errorf("decode %s launch: %w", protocol, ErrMalformedLog)
 	}
 	staged := p.registry.fork()
+	if err := staged.RegisterToken(TokenRegistration{Token: launch.Token, Protocol: launch.Protocol, Quote: launch.Quote, Venue: launch.Venue}); err != nil {
+		return Event{}, false, err
+	}
 	if launch.Curve != (common.Address{}) {
 		if err := staged.RegisterCurve(CurveRegistration{Curve: launch.Curve, Protocol: launch.Protocol, Token: launch.Token, Quote: launch.Quote}); err != nil {
 			return Event{}, false, err
@@ -246,6 +534,17 @@ func (p *Parser) launchEvent(log gethtypes.Log, protocol Protocol, launch Launch
 }
 
 func (p *Parser) ParseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
+	return p.parseReceiptWithLogErrorHandler(receipt, nil)
+}
+
+// ParseReceiptWithLogErrorHandler preserves ParseReceipt's transactional
+// registry update while allowing explicitly recoverable log errors to be
+// isolated from the rest of the receipt.
+func (p *Parser) ParseReceiptWithLogErrorHandler(receipt *gethtypes.Receipt, handler LogErrorHandler) ([]Event, error) {
+	return p.parseReceiptWithLogErrorHandler(receipt, handler)
+}
+
+func (p *Parser) parseReceiptWithLogErrorHandler(receipt *gethtypes.Receipt, handler LogErrorHandler) ([]Event, error) {
 	if p == nil || p.registry == nil {
 		return nil, ErrInvalidRegistration
 	}
@@ -254,7 +553,7 @@ func (p *Parser) ParseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
 	}
 	staged := p.registry.fork()
 	stagedParser := &Parser{addresses: p.addresses, registry: staged}
-	events, err := stagedParser.parseReceipt(receipt)
+	events, err := stagedParser.parseReceipt(receipt, handler)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +561,21 @@ func (p *Parser) ParseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
 		return nil, err
 	}
 	return events, nil
+}
+
+func (p *Parser) upgradeProtocol(proxy common.Address) (Protocol, bool) {
+	switch proxy {
+	case p.addresses.FlapController:
+		return ProtocolFlapTax, true
+	case p.addresses.VaroLaunchpad:
+		return ProtocolVaro, true
+	case p.addresses.VirtualsLaunchpad, p.addresses.VirtualsFactory, p.addresses.VirtualsFRouter:
+		return ProtocolVirtuals, true
+	case p.addresses.GMGNRouter:
+		return ProtocolUnknown, true
+	default:
+		return ProtocolUnknown, false
+	}
 }
 
 // ParseReceiptFiltered filters output after the transactional registry update,
@@ -282,22 +596,34 @@ func (p *Parser) ParseReceiptFiltered(receipt *gethtypes.Receipt, filter EventFi
 	return events[:write], nil
 }
 
-func (p *Parser) parseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
-	events := make([]Event, 0, len(receipt.Logs))
+func (p *Parser) parseReceipt(receipt *gethtypes.Receipt, handler LogErrorHandler) ([]Event, error) {
+	flapEvents, flapConsumed, err := p.collectFlapReceiptEvents(receipt)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]Event, 0, len(receipt.Logs)+len(flapEvents))
+	events = append(events, flapEvents...)
 	launchIndexes := make([]int, 0, 4)
 	initializations := make(map[common.Hash]PoolInitialized)
 	initializationIndexes := make(map[common.Hash]int)
 
-	for _, logPtr := range receipt.Logs {
+	for receiptIndex, logPtr := range receipt.Logs {
 		if logPtr == nil || logPtr.Removed {
 			continue
 		}
-		if isDeferredReceiptTrade(logPtr, p.addresses.PoolManager) {
+		if _, ok := flapConsumed[receiptIndex]; ok {
+			continue
+		}
+		if len(logPtr.Topics) > 0 && logPtr.Address == p.addresses.PoolManager && logPtr.Topics[0] == topicPoolSwap {
 			continue
 		}
 		event, ok, err := p.ParseLog(*logPtr)
 		if err != nil {
-			return nil, fmt.Errorf("log %d: %w", logPtr.Index, err)
+			wrapped := fmt.Errorf("log %d: %w", logPtr.Index, err)
+			if handler != nil && handler(*logPtr, wrapped) {
+				continue
+			}
+			return nil, wrapped
 		}
 		if !ok {
 			continue
@@ -369,16 +695,17 @@ func (p *Parser) parseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
 		}
 	}
 
-	// Trades can be emitted before the launch contract publishes the event that
-	// identifies their newly-created curve or pool. Decode them only after all
-	// registrations from the receipt have been staged.
 	for _, logPtr := range receipt.Logs {
-		if !isDeferredReceiptTrade(logPtr, p.addresses.PoolManager) {
+		if logPtr == nil || logPtr.Removed || len(logPtr.Topics) == 0 || logPtr.Address != p.addresses.PoolManager || logPtr.Topics[0] != topicPoolSwap {
 			continue
 		}
 		event, ok, err := p.ParseLog(*logPtr)
 		if err != nil {
-			return nil, fmt.Errorf("log %d: %w", logPtr.Index, err)
+			wrapped := fmt.Errorf("log %d: %w", logPtr.Index, err)
+			if handler != nil && handler(*logPtr, wrapped) {
+				continue
+			}
+			return nil, wrapped
 		}
 		if ok {
 			events = append(events, event)
@@ -387,17 +714,6 @@ func (p *Parser) parseReceipt(receipt *gethtypes.Receipt) ([]Event, error) {
 
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Log.Index < events[j].Log.Index })
 	return events, nil
-}
-
-func isDeferredReceiptTrade(log *gethtypes.Log, poolManager common.Address) bool {
-	if log == nil || log.Removed || len(log.Topics) == 0 {
-		return false
-	}
-	topic := log.Topics[0]
-	if log.Address == poolManager && topic == topicPoolSwap {
-		return true
-	}
-	return topic == topicPonsCurveBuy || topic == topicPonsCurveSell || topic == topicBagsCurveBuy || topic == topicBagsCurveSell
 }
 
 func poolRegistrationFromPending(pending PendingPoolRegistration, initialized PoolInitialized) (PoolRegistration, error) {

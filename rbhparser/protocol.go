@@ -15,9 +15,14 @@ const (
 	ProtocolPoolsTrade
 	ProtocolPAIR
 	ProtocolBagsV2
+	ProtocolLetsCash
+	ProtocolFlapTax
+	ProtocolFlapStocks
+	ProtocolVaro
+	ProtocolVirtuals
 )
 
-func (p Protocol) Valid() bool { return p >= ProtocolPonsV2 && p <= ProtocolBagsV2 }
+func (p Protocol) Valid() bool { return p >= ProtocolPonsV2 && p <= ProtocolVirtuals }
 
 func (p Protocol) String() string {
 	switch p {
@@ -33,6 +38,16 @@ func (p Protocol) String() string {
 		return "pair"
 	case ProtocolBagsV2:
 		return "bags-v2"
+	case ProtocolLetsCash:
+		return "letscash"
+	case ProtocolFlapTax:
+		return "flap-tax"
+	case ProtocolFlapStocks:
+		return "flap-stocks"
+	case ProtocolVaro:
+		return "varo"
+	case ProtocolVirtuals:
+		return "virtuals"
 	default:
 		return "unknown"
 	}
@@ -49,6 +64,10 @@ type ProtocolCapabilities struct {
 	PendingCurveIntents  bool
 	RegistersV4Pools     bool
 	PendingV4SwapIntents bool
+	PendingDirectIntents bool
+	FeePolicyEvents      bool
+	RegistersV2Pairs     bool
+	RegistersV3Pools     bool
 }
 
 type ProtocolInfo struct {
@@ -63,6 +82,11 @@ var supportedProtocols = [...]ProtocolInfo{
 	{Protocol: ProtocolPoolsTrade, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, PendingLaunchIntent: true, RegistersV4Pools: true, PendingV4SwapIntents: true}},
 	{Protocol: ProtocolPAIR, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, PendingLaunchIntent: true, RegistersV4Pools: true, PendingV4SwapIntents: true}},
 	{Protocol: ProtocolBagsV2, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, PendingLaunchIntent: true, CurveTrades: true, PendingCurveIntents: true, RegistersV4Pools: true, PendingV4SwapIntents: true}},
+	{Protocol: ProtocolLetsCash, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, RegistersV4Pools: true, PendingV4SwapIntents: true, PendingDirectIntents: true, FeePolicyEvents: true}},
+	{Protocol: ProtocolFlapTax, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, PendingDirectIntents: true, FeePolicyEvents: true, RegistersV2Pairs: true, RegistersV3Pools: true}},
+	{Protocol: ProtocolFlapStocks, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, PendingDirectIntents: true, FeePolicyEvents: true, RegistersV2Pairs: true}},
+	{Protocol: ProtocolVaro, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, PendingDirectIntents: true, FeePolicyEvents: true, RegistersV3Pools: true}},
+	{Protocol: ProtocolVirtuals, Capabilities: ProtocolCapabilities{ConfirmedLaunch: true, PendingLaunchIntent: true, PendingDirectIntents: true, FeePolicyEvents: true, RegistersV2Pairs: true}},
 }
 
 func SupportedProtocols() []ProtocolInfo {
@@ -73,6 +97,9 @@ func SupportedProtocols() []ProtocolInfo {
 
 func ParseProtocol(value string) (Protocol, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "bankr" || value == "long.xyz" {
+		return ProtocolLong, nil
+	}
 	for _, info := range supportedProtocols {
 		if info.Protocol.String() == value {
 			return info.Protocol, nil

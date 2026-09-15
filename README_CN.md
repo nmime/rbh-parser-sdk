@@ -4,7 +4,7 @@
 </div>
 
 <p align="center">
-  <strong>类型化解析 Pons V2、Long、o1、Pools.trade、PAIR、Bags V2 与 Uniswap v4。</strong>
+  <strong>类型化解析 Pons V2、Long、o1、Pools.trade、PAIR、Bags V2、letscash.fun、Flap、Varo、Virtuals 与 Uniswap v4。</strong>
 </p>
 
 <p align="center">
@@ -21,8 +21,9 @@
   <a href="https://discord.gg/vuazbGkqQE">Discord</a>
 </p>
 
-SDK 与数据传输层解耦：只解析由应用传入的数据，不包含官方 Feed、
-BlockRazor、WebSocket、RPC 订阅或其他网络客户端实现。
+`rbhparser` 核心包只解析应用传入的数据，不会隐式发起 RPC 请求。
+可选的 `feed/sequencer` 与 `feed/blockrazor` 包分别提供带签名校验的官方
+Sequencer Feed 客户端和 BlockRazor 区域 Direct Feed 客户端。
 
 ## SDK
 
@@ -41,6 +42,13 @@ BlockRazor、WebSocket、RPC 订阅或其他网络客户端实现。
 | Pools.trade | 支持 | 不适用 | 支持 | 支持 |
 | PAIR | 支持 | 不适用 | 支持 | 支持 |
 | Bags V2 | 支持 | 支持 | 支持 | 支持 |
+| letscash.fun | 支持 | 不适用 | 支持 | 支持 |
+| Flap Tax / Stocks | 支持 | 不适用 | 不适用 | 支持 |
+| Varo | 支持 | 不适用 | 不适用 | 支持 |
+| Virtuals | 支持 | 不适用 | 不适用 | 支持 |
+
+Flap 还会注册毕业后的 V2 pair 并跟踪 `Sync` 储备；Varo 注册 v3 池，
+Virtuals 跟踪内盘与外部流动性。具体能力以 `SupportedProtocols()` 为准。
 
 可通过 `SupportedProtocols()` 获取机器可读的能力列表，通过
 `ParseProtocol()` 解析配置中的协议名称。
@@ -56,14 +64,19 @@ BlockRazor、WebSocket、RPC 订阅或其他网络客户端实现。
   退款、费用拆分与交易后虚拟储备保存在 `CurveTrade.Bags`。
 - Receipt 解析采用事务式注册表更新，解析失败不会留下部分状态。
 - 支持已知 curve 和 pool 注册信息的快照恢复。
+- 追踪费率策略和毕业后 venue 注册；不会把 `ModifyLiquidity` 错当成费率证据。
+- 使用 overlay registry 隔离 Feed 推测状态与 finalized 持久化状态。
+- 可选的官方 Feed 客户端校验签名、序号连续性、缺口与 reorg；Feed 意图并非成交回执。
 - 即使未观察到更早的 Bags `TokenCreated`，精确匹配官方 Bags Hook、WETH、dynamic fee 和 tick spacing 的 `Initialize` 也会注册为 Bags V2；官方 Hook 只允许其已注册 bonding curve 初始化该池。
 - 不会隐式调用 RPC 或任何网络接口。
 
 ## 安装
 
 ```bash
-go get github.com/0xfnzero/rbh-parser-sdk@v0.3.0
+go get github.com/0xfnzero/rbh-parser-sdk@v0.4.0
 ```
+
+`v0.4.0` 包含本次扩展的平台和 Feed 支持；旧 tag 不包含这些能力。
 
 ## 解析 Receipt
 
@@ -129,6 +142,30 @@ if parser.IsPotentialIntent(tx) {
 `IsPotentialIntentWithFilter` 会先进行低成本的合约和 selector 检查，再做完整
 ABI 解码。交易意图只代表已提交的 calldata，不代表最终执行结果或成交数量。
 
+可选官方 Feed 客户端能直接从带签名的 Sequencer Feed 中过滤并解析意图：
+
+```go
+feed, err := sequencer.New(sequencer.Config{
+    Filter: func(tx *gethtypes.Transaction) bool {
+        return parser.IsPotentialIntentWithFilter(tx, intentFilter)
+    },
+    OnSequence: func(_ context.Context, sequence uint64) error {
+        return persistSequence(sequence)
+    },
+})
+if err != nil { return err }
+err = feed.Run(ctx, func(_ context.Context, item sequencer.FeedTransaction) error {
+    _, err := parser.VisitTransactionIntentsFiltered(
+        item.Transaction, item.Sender, intentFilter, handleIntent,
+    )
+    return err
+})
+```
+
+完整示例见 [`examples/direct_feed`](./examples/direct_feed)。续传时持久化 Feed
+sequence，不能用 EVM 区块号替代；最终成交应以 Receipt 确认。过滤之前会验证
+签名，Feed 到意图的热路径不需要 Receipt 或 RPC 查询。
+
 ## 过滤
 
 ```go
@@ -169,10 +206,8 @@ go test -race ./...
 go vet ./...
 ```
 
-在线部署与 Receipt 校验默认跳过，需要显式提供 RPC。测试会检查六个平台合约
-的 runtime code，并解析 Pons V2、Long、o1、Pools.trade、PAIR 的固定主网
-Launch Receipt。Bags V2 主网工厂尚未发出首次 Launch 事件，因此其 Launch
-解码目前由离线 ABI 测试覆盖。
+在线部署与 Receipt 校验默认跳过，需要显式提供 RPC。离线测试覆盖扩展后的
+协议；在线测试取决于主网部署和代表性交易是否可用。
 
 ```bash
 ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com go test ./rbhparser -run TestRobinhood -count=1 -v

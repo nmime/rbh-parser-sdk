@@ -9,8 +9,8 @@ import (
 )
 
 func TestEventFilterProtocolAndKindCombinations(t *testing.T) {
-	protocols := []Protocol{ProtocolPonsV2, ProtocolLong, ProtocolO1, ProtocolPoolsTrade, ProtocolPAIR, ProtocolBagsV2}
-	kinds := []EventKind{EventLaunch, EventPoolInitialized, EventSwap, EventCurveBuy, EventCurveSell}
+	protocols := []Protocol{ProtocolPonsV2, ProtocolLong, ProtocolO1, ProtocolPoolsTrade, ProtocolPAIR, ProtocolBagsV2, ProtocolLetsCash, ProtocolFlapTax, ProtocolFlapStocks, ProtocolVaro, ProtocolVirtuals}
+	kinds := []EventKind{EventLaunch, EventPoolInitialized, EventSwap, EventCurveBuy, EventCurveSell, EventFeePolicy, EventVenueSwap}
 	for _, protocol := range protocols {
 		for _, kind := range kinds {
 			event := Event{Protocol: protocol, Kind: kind}
